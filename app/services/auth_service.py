@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token
 from app.core.database import get_database
 from app.models.user import UserCreate, UserInDB, UserLogin, Token, GoogleUserInfo
+from bson import ObjectId
 
 logger = structlog.get_logger(__name__)
 
@@ -20,6 +21,12 @@ class AuthService:
     def set_database(self, db):
         """Set database instance"""
         self.db = db
+
+    def _convert_objectid_to_string(self, user_doc):
+        """Convert ObjectId fields to strings for Pydantic compatibility"""
+        if user_doc and "_id" in user_doc:
+            user_doc["_id"] = str(user_doc["_id"])
+        return user_doc
     
     async def create_user(self, user_data: UserCreate) -> UserInDB:
         """Create a new user"""
@@ -63,7 +70,7 @@ class AuthService:
             
             # Insert user
             result = await self.db.users.insert_one(user_doc)
-            user_doc["_id"] = result.inserted_id
+            user_doc["_id"] = str(result.inserted_id)
             
             logger.info(f"User created successfully: {user_data.username}")
             return UserInDB(**user_doc)
@@ -92,6 +99,7 @@ class AuthService:
                 logger.warning(f"Login attempt for non-existent user: {login_data.username_or_email}")
                 return None
             
+            user_doc = self._convert_objectid_to_string(user_doc)
             user = UserInDB(**user_doc)
             
             # Check if account is locked
@@ -112,7 +120,7 @@ class AuthService:
             # Reset failed attempts on successful login
             if user.failed_login_attempts > 0:
                 await self.db.users.update_one(
-                    {"_id": user.id},
+                    {"_id": ObjectId(user.id)},
                     {
                         "$set": {
                             "failed_login_attempts": 0,
@@ -124,7 +132,7 @@ class AuthService:
             else:
                 # Just update last login
                 await self.db.users.update_one(
-                    {"_id": user.id},
+                    {"_id": ObjectId(user.id)},
                     {"$set": {"last_login": datetime.utcnow()}}
                 )
             
@@ -140,7 +148,7 @@ class AuthService:
     async def _handle_failed_login(self, user_id: str):
         """Handle failed login attempt"""
         try:
-            user_doc = await self.db.users.find_one({"_id": user_id})
+            user_doc = await self.db.users.find_one({"_id": ObjectId(user_id)})
             if not user_doc:
                 return
             
@@ -154,7 +162,7 @@ class AuthService:
                 logger.warning(f"Account locked for user {user_id} due to {failed_attempts} failed attempts")
             
             await self.db.users.update_one(
-                {"_id": user_id},
+                {"_id": ObjectId(user_id)},
                 {"$set": update_data}
             )
             
@@ -236,6 +244,7 @@ class AuthService:
                     {"_id": user_doc["_id"]},
                     {"$set": {"last_login": datetime.utcnow()}}
                 )
+                user_doc = self._convert_objectid_to_string(user_doc)
                 user = UserInDB(**user_doc)
                 logger.info(f"Google user logged in: {user.username}")
                 return user
@@ -260,6 +269,7 @@ class AuthService:
                 user_doc["avatar_url"] = google_user.picture
                 user_doc["is_verified"] = True
                 
+                user_doc = self._convert_objectid_to_string(user_doc)
                 user = UserInDB(**user_doc)
                 logger.info(f"Google account linked to existing user: {user.username}")
                 return user
@@ -290,8 +300,9 @@ class AuthService:
             }
             
             result = await self.db.users.insert_one(user_doc)
-            user_doc["_id"] = result.inserted_id
+            user_doc["_id"] = str(result.inserted_id)
             
+            user_doc = self._convert_objectid_to_string(user_doc)
             user = UserInDB(**user_doc)
             logger.info(f"New Google user created: {user.username}")
             return user

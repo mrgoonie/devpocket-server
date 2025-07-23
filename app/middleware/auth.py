@@ -3,12 +3,19 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.security import verify_token
 from app.core.database import get_database
 from app.models.user import UserInDB
+from bson import ObjectId
 from typing import Optional
 from datetime import datetime
 import structlog
 
 logger = structlog.get_logger(__name__)
 security = HTTPBearer()
+
+def _convert_objectid_to_string(user_doc):
+    """Convert ObjectId fields to strings for Pydantic compatibility"""
+    if user_doc and "_id" in user_doc:
+        user_doc["_id"] = str(user_doc["_id"])
+    return user_doc
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -35,11 +42,12 @@ async def get_current_user(
             raise credentials_exception
             
         # Get user from database
-        user_doc = await db.users.find_one({"_id": user_id})
+        user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
         if user_doc is None:
             logger.warning(f"User not found: {user_id}")
             raise credentials_exception
             
+        user_doc = _convert_objectid_to_string(user_doc)
         user = UserInDB(**user_doc)
         
         # Check if user is active
@@ -116,10 +124,11 @@ class OptionalAuth:
             if user_id is None:
                 return None
                 
-            user_doc = await db.users.find_one({"_id": user_id})
+            user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
             if user_doc is None:
                 return None
                 
+            user_doc = _convert_objectid_to_string(user_doc)
             user = UserInDB(**user_doc)
             return user if user.is_active else None
             

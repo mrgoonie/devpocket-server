@@ -8,13 +8,24 @@ class PyObjectId(ObjectId):
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type, handler):
         from pydantic_core import core_schema
-        return core_schema.str_schema()
+        return core_schema.no_info_before_validator_function(
+            cls.validate,
+            core_schema.str_schema(),
+        )
 
     @classmethod
     def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
+        if isinstance(v, ObjectId):
+            return str(v)
+        if isinstance(v, str):
+            if not ObjectId.is_valid(v):
+                raise ValueError("Invalid ObjectId")
+            return v
+        raise ValueError("ObjectId must be a valid ObjectId or string")
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, field_schema, handler):
+        field_schema.update(type="string")
 
 class EnvironmentStatus(str, Enum):
     CREATING = "creating"
@@ -73,7 +84,7 @@ class EnvironmentUpdate(BaseModel):
     environment_variables: Optional[Dict[str, str]] = None
 
 class EnvironmentInDB(BaseModel):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    id: str = Field(alias="_id")
     user_id: str
     name: str
     template: EnvironmentTemplate
@@ -122,7 +133,7 @@ class EnvironmentResponse(BaseModel):
     storage_usage: Optional[float]
 
 class WebSocketSession(BaseModel):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    id: str = Field(alias="_id")
     user_id: str
     environment_id: str
     connection_id: str

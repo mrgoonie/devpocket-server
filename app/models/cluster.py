@@ -8,13 +8,24 @@ class PyObjectId(ObjectId):
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type, handler):
         from pydantic_core import core_schema
-        return core_schema.str_schema()
+        return core_schema.no_info_before_validator_function(
+            cls.validate,
+            core_schema.str_schema(),
+        )
 
     @classmethod
     def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
+        if isinstance(v, ObjectId):
+            return str(v)
+        if isinstance(v, str):
+            if not ObjectId.is_valid(v):
+                raise ValueError("Invalid ObjectId")
+            return v
+        raise ValueError("ObjectId must be a valid ObjectId or string")
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, field_schema, handler):
+        field_schema.update(type="string")
 
 class ClusterStatus(str, Enum):
     ACTIVE = "active"
@@ -55,13 +66,13 @@ class ClusterUpdate(BaseModel):
     kube_config: Optional[str] = None
 
 class ClusterInDB(ClusterBase):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    id: str = Field(alias="_id")
     encrypted_kube_config: str = Field(..., description="Encrypted kubeconfig content")
     status: ClusterStatus = ClusterStatus.ACTIVE
     environments_count: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    created_by: PyObjectId
+    created_by: str
     
     class Config:
         populate_by_name = True
