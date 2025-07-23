@@ -40,16 +40,10 @@ jobs:
     
     - name: Run comprehensive tests
       run: |
-        docker compose -f docker-compose.test.yml run --rm test-runner pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+        docker compose -f docker-compose.test.yml run --rm test-runner pytest tests/ -v --tb=short
       continue-on-error: false
     
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-      continue-on-error: true
+
     
     - name: Test Docker production build
       run: |
