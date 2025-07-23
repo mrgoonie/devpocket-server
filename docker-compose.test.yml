@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Test runner service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      platforms:
+        - linux/amd64
+    volumes:
+      - .:/app
+      - test-coverage:/app/htmlcov
+    environment:
+      - MONGODB_URL=mongodb://mongo-test:27017
+      - DATABASE_NAME=devpocket_test
+      - REDIS_URL=redis://redis-test:6379
+      - ENVIRONMENT=test
+      - DEBUG=true
+      - SECRET_KEY=test-secret-key-for-testing-only
+      - LOG_LEVEL=WARNING
+    depends_on:
+      - mongo-test
+      - redis-test
+    networks:
+      - test-network
+    labels:
+      - "test=devpocket"
+    command: pytest tests/ -v
+
+  # Test MongoDB
+  mongo-test:
+    image: mongo:7.0
+    container_name: devpocket-mongo-test
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=testuser
+      - MONGO_INITDB_ROOT_PASSWORD=testpass
+      - MONGO_INITDB_DATABASE=devpocket_test
+    volumes:
+      - mongo-test-data:/data/db
+    networks:
+      - test-network
+    labels:
+      - "test=devpocket"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Test Redis
+  redis-test:
+    image: redis:7.2-alpine
+    container_name: devpocket-redis-test
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-test-data:/data
+    networks:
+      - test-network
+    labels:
+      - "test=devpocket"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  test-network:
+    driver: bridge
+    labels:
+      - "test=devpocket"
+
+volumes:
+  mongo-test-data:
+    labels:
+      - "test=devpocket"
+  redis-test-data:
+    labels:
+      - "test=devpocket"
+  test-coverage:
+    labels:
+      - "test=devpocket"

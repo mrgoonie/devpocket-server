@@ -1,0 +1,46 @@
+# Test Dockerfile for DevPocket Server
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create test user
+RUN groupadd -r testuser && useradd -r -g testuser -s /bin/bash -d /app testuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt requirements-test.txt ./
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt && \
+    pip install -r requirements-test.txt
+
+# Copy application code
+COPY app/ ./app/
+COPY tests/ ./tests/
+COPY pytest.ini ./
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/htmlcov /app/logs && \
+    chown -R testuser:testuser /app
+
+# Switch to test user
+USER testuser
+
+# Default command
+CMD ["pytest", "tests/", "-v", "--cov=app", "--cov-report=html", "--cov-report=term-missing"]
