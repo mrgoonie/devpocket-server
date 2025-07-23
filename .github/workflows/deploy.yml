@@ -62,130 +62,150 @@ jobs:
 
   # Job 2: Build and Deploy (only on main branch)
   build-and-deploy:
-    name: Build and Deploy to Production
+    name: Deploy to [devpocket.goon.vn]
     runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
+    if: always() && !cancelled() && !failure() && contains(github.ref, 'main')
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Fetch all history for version calculation
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Deploy with DXUP
+        uses: "digitopvn/diginext-actions@v2"
+        with:
+          api_key: ${{ secrets.DX_API_KEY }}
+          cluster: dxupprod
+          registry: digitopdockerhub
+          deploy_env: prod
+          tail: true
+          port: 8000
+
+  # build-and-deploy:
+  #   name: Build and Deploy to Production
+  #   runs-on: ubuntu-latest
+  #   needs: test
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+  #     with:
+  #       fetch-depth: 0  # Fetch all history for version calculation
     
-    - name: Calculate version
-      id: version
-      run: |
-        chmod +x scripts/get-version.sh
-        VERSION=$(scripts/get-version.sh)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
+  #   - name: Set up Docker Buildx
+  #     uses: docker/setup-buildx-action@v3
     
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ secrets.DOCKER_USER }}
-        password: ${{ secrets.DOCKER_PAT }}
+  #   - name: Calculate version
+  #     id: version
+  #     run: |
+  #       chmod +x scripts/get-version.sh
+  #       VERSION=$(scripts/get-version.sh)
+  #       echo "version=$VERSION" >> $GITHUB_OUTPUT
+  #       echo "Version: $VERSION"
     
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.IMAGE_NAME }}
-        tags: |
-          type=raw,value=latest
-          type=raw,value=${{ steps.version.outputs.version }}
-          type=sha,prefix={{branch}}-
+  #   - name: Login to Docker Hub
+  #     uses: docker/login-action@v3
+  #     with:
+  #       registry: ${{ env.REGISTRY }}
+  #       username: ${{ secrets.DOCKER_USER }}
+  #       password: ${{ secrets.DOCKER_PAT }}
     
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          ENVIRONMENT=production
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+  #   - name: Extract metadata
+  #     id: meta
+  #     uses: docker/metadata-action@v5
+  #     with:
+  #       images: ${{ env.IMAGE_NAME }}
+  #       tags: |
+  #         type=raw,value=latest
+  #         type=raw,value=${{ steps.version.outputs.version }}
+  #         type=sha,prefix={{branch}}-
     
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
+  #   - name: Build and push Docker image
+  #     uses: docker/build-push-action@v5
+  #     with:
+  #       context: .
+  #       platforms: linux/amd64
+  #       push: true
+  #       tags: ${{ steps.meta.outputs.tags }}
+  #       labels: ${{ steps.meta.outputs.labels }}
+  #       build-args: |
+  #         ENVIRONMENT=production
+  #       cache-from: type=gha
+  #       cache-to: type=gha,mode=max
     
-    - name: Configure kubectl
-      run: |
-        mkdir -p ~/.kube
-        echo "${{ secrets.KUBE_CONFIG_OVH }}" | base64 -d > ~/.kube/config
-        chmod 600 ~/.kube/config
+  #   - name: Set up kubectl
+  #     uses: azure/setup-kubectl@v3
+  #     with:
+  #       version: 'v1.28.0'
     
-    - name: Verify cluster connection
-      run: |
-        kubectl cluster-info
-        kubectl get nodes
+  #   - name: Configure kubectl
+  #     run: |
+  #       mkdir -p ~/.kube
+  #       echo "${{ secrets.KUBE_CONFIG_OVH }}" | base64 -d > ~/.kube/config
+  #       chmod 600 ~/.kube/config
     
-    - name: Create namespace if not exists
-      run: |
-        kubectl apply -f k8s/namespace.yaml
+  #   - name: Verify cluster connection
+  #     run: |
+  #       kubectl cluster-info
+  #       kubectl get nodes
     
-    - name: Update image tag in deployment
-      run: |
-        sed -i "s|image: digitop/devpocket-api:latest|image: digitop/devpocket-api:${{ steps.version.outputs.version }}|g" k8s/deployment.yaml
+  #   - name: Create namespace if not exists
+  #     run: |
+  #       kubectl apply -f k8s/namespace.yaml
     
-    - name: Update deployment labels with version
-      run: |
-        sed -i "s|version: latest|version: ${{ steps.version.outputs.version }}|g" k8s/deployment.yaml
+  #   - name: Update image tag in deployment
+  #     run: |
+  #       sed -i "s|image: digitop/devpocket-api:latest|image: digitop/devpocket-api:${{ steps.version.outputs.version }}|g" k8s/deployment.yaml
     
-    - name: Deploy to Kubernetes
-      run: |
-        # Apply configurations and secrets first
-        kubectl apply -f k8s/configmap.yaml
+  #   - name: Update deployment labels with version
+  #     run: |
+  #       sed -i "s|version: latest|version: ${{ steps.version.outputs.version }}|g" k8s/deployment.yaml
+    
+  #   - name: Deploy to Kubernetes
+  #     run: |
+  #       # Apply configurations and secrets first
+  #       kubectl apply -f k8s/configmap.yaml
         
-        # Apply deployment and services
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
-        kubectl apply -f k8s/hpa.yaml
+  #       # Apply deployment and services
+  #       kubectl apply -f k8s/deployment.yaml
+  #       kubectl apply -f k8s/service.yaml
+  #       kubectl apply -f k8s/hpa.yaml
         
-        # Wait for rollout to complete
-        kubectl rollout status deployment/devpocket-server -n devpocket-prod --timeout=600s
+  #       # Wait for rollout to complete
+  #       kubectl rollout status deployment/devpocket-server -n devpocket-prod --timeout=600s
     
-    - name: Verify deployment
-      run: |
-        kubectl get pods -n devpocket-prod -l app=devpocket-server
-        kubectl get svc -n devpocket-prod
-        kubectl get ingress -n devpocket-prod
+  #   - name: Verify deployment
+  #     run: |
+  #       kubectl get pods -n devpocket-prod -l app=devpocket-server
+  #       kubectl get svc -n devpocket-prod
+  #       kubectl get ingress -n devpocket-prod
     
-    - name: Create Git tag
-      if: success()
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
-        git push origin "v${{ steps.version.outputs.version }}"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #   - name: Create Git tag
+  #     if: success()
+  #     run: |
+  #       git config --local user.email "action@github.com"
+  #       git config --local user.name "GitHub Action"
+  #       git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+  #       git push origin "v${{ steps.version.outputs.version }}"
+  #     env:
+  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Post-deployment health check
-      run: |
-        # Wait a bit for services to be ready
-        sleep 30
+  #   - name: Post-deployment health check
+  #     run: |
+  #       # Wait a bit for services to be ready
+  #       sleep 30
         
-        # Get service endpoint (adjust based on your setup)
-        kubectl get pods -n devpocket-prod -l app=devpocket-server -o wide
+  #       # Get service endpoint (adjust based on your setup)
+  #       kubectl get pods -n devpocket-prod -l app=devpocket-server -o wide
         
-        # If you have an ingress with external IP, you can test it here
-        echo "Deployment completed successfully!"
+  #       # If you have an ingress with external IP, you can test it here
+  #       echo "Deployment completed successfully!"
     
-    - name: Cleanup old images (optional)
-      run: |
-        # Keep only the last 5 tags in Docker Hub (optional)
-        echo "Deployment completed. Consider cleaning up old Docker images manually."
+  #   - name: Cleanup old images (optional)
+  #     run: |
+  #       # Keep only the last 5 tags in Docker Hub (optional)
+  #       echo "Deployment completed. Consider cleaning up old Docker images manually."
 
   # Job 3: Notification on failure
   notify-failure:
