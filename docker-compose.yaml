@@ -6,6 +6,8 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
     container_name: devpocket-api
     ports:
       - "8000:8000"
