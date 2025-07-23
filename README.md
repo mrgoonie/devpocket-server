@@ -249,7 +249,7 @@ ws.send(JSON.stringify({
 
 ## 🐳 Docker Deployment
 
-### Production Deployment
+### Local Development with Docker Compose
 
 ```bash
 # Build and start all services
@@ -263,44 +263,29 @@ docker-compose pull
 docker-compose up -d
 ```
 
-### Kubernetes Deployment
+### Production Kubernetes Deployment
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: devpocket-api
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: devpocket-api
-  template:
-    metadata:
-      labels:
-        app: devpocket-api
-    spec:
-      containers:
-      - name: api
-        image: devpocket/api:latest
-        ports:
-        - containerPort: 8000
-        env:
-        - name: MONGODB_URL
-          value: "mongodb://mongo:27017"
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+The project includes comprehensive Kubernetes manifests and automated CI/CD:
+
+```bash
+# Quick deployment
+./scripts/deploy.sh
+
+# Deploy specific version
+./scripts/deploy.sh v1.2.3
+
+# Update secrets
+./scripts/update-secrets.sh
 ```
+
+#### Automated Deployment
+- **GitHub Actions**: Automatic build and deploy on push to `main`
+- **Docker Registry**: `digitop/devpocket-api` on Docker Hub
+- **Versioning**: Semantic versioning with Git tags
+- **Health Checks**: Automated readiness and liveness probes
+- **Scaling**: Horizontal Pod Autoscaler (3-10 replicas)
+
+See [k8s/README.md](k8s/README.md) for detailed Kubernetes deployment guide.
 
 ## 🔒 Security Best Practices
 

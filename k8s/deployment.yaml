@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devpocket-server
+  namespace: devpocket-prod
+  labels:
+    app: devpocket-server
+    version: latest
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: devpocket-server
+  template:
+    metadata:
+      labels:
+        app: devpocket-server
+        version: latest
+    spec:
+      containers:
+      - name: devpocket-api
+        image: digitop/devpocket-api:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: APP_NAME
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: ENVIRONMENT
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: DEBUG
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: HOST
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: PORT
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: DATABASE_NAME
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: LOG_LEVEL
+        - name: LOG_FORMAT
+          valueFrom:
+            configMapKeyRef:
+              name: devpocket-config
+              key: LOG_FORMAT
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: SECRET_KEY
+        - name: MONGODB_URL
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: MONGODB_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: REDIS_URL
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: GOOGLE_CLIENT_ID
+              optional: true
+        - name: GOOGLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: devpocket-secrets
+              key: GOOGLE_CLIENT_SECRET
+              optional: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
