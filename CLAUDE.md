@@ -174,7 +174,7 @@ The application includes production-ready Docker configuration with:
 - focus on human-readable & developer-friendly when writing code
 - high standard of user experience
 - run app to check if it works, fix all issues if any
-- commit the code after every task implemented (if it works)
+- commit the code on the current branch after every task implemented (if it works)
 - Keep commits focused on the actual code changes
 - NEVER automatically add AI attribution signatures like:
   "🤖 Generated with [Claude Code]"

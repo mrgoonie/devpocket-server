@@ -64,6 +64,6 @@ docker-compose*.yml
 .travis.yml
 
 # Development
-tests/
-test_*.py
-*_test.py
+# tests/ - commented out for test builds
+# test_*.py - commented out for test builds
+# *_test.py - commented out for test builds

@@ -17,25 +17,27 @@ from app.api import auth, environments, websocket, clusters
 # Configure logging
 logger = configure_logging()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info("Starting DevPocket API server", version="1.0.0")
-    
+
     try:
         await connect_to_mongo()
         logger.info("Database connected successfully")
     except Exception as e:
         logger.error("Failed to connect to database", error=str(e))
         raise
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down DevPocket API server")
     await close_mongo_connection()
     logger.info("Database connection closed")
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -70,17 +72,19 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG or not settings.is_production else None,
 )
 
+
 # Add security headers middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    
+
     # Add security headers
     headers = SecurityHeaders.get_security_headers()
     for name, value in headers.items():
         response.headers[name] = value
-    
+
     return response
+
 
 # Add request timing middleware
 @app.middleware("http")
@@ -91,12 +95,9 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
+
 # Add rate limiting middleware
-app.add_middleware(
-    RateLimitMiddleware,
-    calls=100,  # 100 requests per minute
-    period=60
-)
+app.add_middleware(RateLimitMiddleware, calls=100, period=60)  # 100 requests per minute
 
 # Add CORS middleware
 app.add_middleware(
@@ -135,6 +136,7 @@ app.include_router(
     tags=["Clusters"],
 )
 
+
 # Global exception handlers
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -142,15 +144,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         "Validation error",
         path=request.url.path,
         method=request.method,
-        errors=exc.errors()
+        errors=exc.errors(),
     )
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": "Validation error",
-            "errors": exc.errors()
-        }
+        content={"detail": "Validation error", "errors": exc.errors()},
     )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -159,23 +159,24 @@ async def global_exception_handler(request: Request, exc: Exception):
         path=request.url.path,
         method=request.method,
         error=str(exc),
-        error_type=type(exc).__name__
+        error_type=type(exc).__name__,
     )
-    
+
     if settings.DEBUG:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "detail": "Internal server error",
                 "error": str(exc),
-                "type": type(exc).__name__
-            }
+                "type": type(exc).__name__,
+            },
         )
     else:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal server error"}
+            content={"detail": "Internal server error"},
         )
+
 
 # Health check endpoints
 @app.get("/", include_in_schema=False)
@@ -187,38 +188,33 @@ async def health_check():
         "service": settings.APP_NAME,
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
-        "timestamp": time.time()
+        "timestamp": time.time(),
     }
+
 
 @app.get("/health/ready")
 async def readiness_check():
     """Readiness check for Kubernetes"""
     try:
         from app.core.database import db
-        
+
         # Check database connection
-        await db.client.admin.command('ping')
-        
-        return {
-            "status": "ready",
-            "checks": {
-                "database": "healthy"
-            }
-        }
+        await db.client.admin.command("ping")
+
+        return {"status": "ready", "checks": {"database": "healthy"}}
     except Exception as e:
         logger.error("Readiness check failed", error=str(e))
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "not_ready",
-                "error": str(e)
-            }
+            content={"status": "not_ready", "error": str(e)},
         )
+
 
 @app.get("/health/live")
 async def liveness_check():
     """Liveness check for Kubernetes"""
     return {"status": "alive"}
+
 
 # API Information
 @app.get("/api/v1/info")
@@ -233,18 +229,19 @@ async def api_info():
             "google_oauth": bool(settings.GOOGLE_CLIENT_ID),
             "websockets": True,
             "rate_limiting": True,
-            "metrics": True
+            "metrics": True,
         },
         "limits": {
             "free_environments": 1,
             "starter_environments": 3,
-            "pro_environments": 10
-        }
+            "pro_environments": 10,
+        },
     }
+
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
@@ -269,5 +266,5 @@ if __name__ == "__main__":
                 "level": settings.LOG_LEVEL,
                 "handlers": ["default"],
             },
-        }
+        },
     )
