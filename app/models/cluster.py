@@ -41,6 +41,7 @@ class ClusterRegion(str, Enum):
     US_WEST = "us-west"
     EU_CENTRAL = "eu-central"
     ASIA_PACIFIC = "asia-pacific"
+    SOUTHEAST_ASIA = "southeast-asia"
 
 
 class ClusterBase(BaseModel):

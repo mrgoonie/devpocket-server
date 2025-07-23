@@ -94,6 +94,7 @@ ssl/
 # Local configuration
 config.local.yaml
 docker-compose.override.yml
+k8s/kube_config_ovh.yaml
 
 # Temporary files
 *.tmp

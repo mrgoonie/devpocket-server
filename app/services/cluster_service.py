@@ -36,7 +36,7 @@ class ClusterService:
         self, cluster_data: ClusterCreate, created_by: str
     ) -> ClusterInDB:
         """Create a new cluster configuration"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         # Validate kubeconfig
@@ -86,7 +86,7 @@ class ClusterService:
         )
 
         result = await self.db.clusters.insert_one(cluster_dict)
-        cluster_dict["_id"] = result.inserted_id
+        cluster_dict["_id"] = str(result.inserted_id)
 
         logger.info(
             "Cluster created successfully",
@@ -97,11 +97,12 @@ class ClusterService:
 
     async def get_cluster_by_id(self, cluster_id: str) -> Optional[ClusterInDB]:
         """Get cluster by ID"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         cluster_data = await self.db.clusters.find_one({"_id": cluster_id})
         if cluster_data:
+            cluster_data["_id"] = str(cluster_data["_id"])
             return ClusterInDB(**cluster_data)
         return None
 
@@ -109,7 +110,7 @@ class ClusterService:
         self, region: ClusterRegion
     ) -> Optional[ClusterInDB]:
         """Get the default cluster for a region"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         # First try to get the default cluster for the region
@@ -124,6 +125,7 @@ class ClusterService:
             )
 
         if cluster_data:
+            cluster_data["_id"] = str(cluster_data["_id"])
             return ClusterInDB(**cluster_data)
         return None
 
@@ -131,7 +133,7 @@ class ClusterService:
         self, region: Optional[ClusterRegion] = None
     ) -> List[ClusterResponse]:
         """List all clusters, optionally filtered by region"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         query = {}
@@ -144,6 +146,7 @@ class ClusterService:
         async for cluster_data in cursor:
             # Remove encrypted config from response
             cluster_dict = dict(cluster_data)
+            cluster_dict["id"] = str(cluster_dict.pop("_id"))
             cluster_dict.pop("encrypted_kube_config", None)
             cluster_dict.pop("created_by", None)
             clusters.append(ClusterResponse(**cluster_dict))
@@ -154,7 +157,7 @@ class ClusterService:
         self, cluster_id: str, update_data: ClusterUpdate
     ) -> Optional[ClusterInDB]:
         """Update cluster configuration"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         update_dict = {
@@ -203,7 +206,7 @@ class ClusterService:
 
     async def delete_cluster(self, cluster_id: str) -> bool:
         """Delete a cluster (only if no environments are using it)"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         cluster = await self.get_cluster_by_id(cluster_id)
@@ -224,7 +227,7 @@ class ClusterService:
 
     async def get_decrypted_kubeconfig(self, cluster_id: str) -> Optional[str]:
         """Get decrypted kubeconfig for internal use"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         cluster_data = await self.db.clusters.find_one({"_id": cluster_id})
@@ -320,7 +323,7 @@ class ClusterService:
 
     async def get_available_regions(self) -> List[Dict[str, Any]]:
         """Get list of available regions with their cluster status"""
-        if not self.db:
+        if self.db is None:
             raise ValueError("Database not initialized")
 
         regions_info = []
