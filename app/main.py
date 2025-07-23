@@ -12,7 +12,7 @@ from app.core.database import connect_to_mongo, close_mongo_connection
 from app.core.logging import configure_logging
 from app.core.security import SecurityHeaders
 from app.middleware.rate_limiting import RateLimitMiddleware
-from app.api import auth, environments, websocket
+from app.api import auth, environments, websocket, clusters
 
 # Configure logging
 logger = configure_logging()
@@ -66,8 +66,8 @@ app = FastAPI(
     """,
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs" if settings.DEBUG or not settings.is_production else None,
+    redoc_url="/redoc" if settings.DEBUG or not settings.is_production else None,
 )
 
 # Add security headers middleware
@@ -127,6 +127,12 @@ app.include_router(
     websocket.router,
     prefix="/api/v1/ws",
     tags=["WebSocket"],
+)
+
+app.include_router(
+    clusters.router,
+    prefix="/api/v1/clusters",
+    tags=["Clusters"],
 )
 
 # Global exception handlers

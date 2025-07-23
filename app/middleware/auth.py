@@ -88,6 +88,10 @@ async def get_current_admin_user(
         )
     return current_user
 
+# Convenient aliases
+get_current_active_user = get_current_user
+require_admin = get_current_admin_user
+
 class OptionalAuth:
     """Optional authentication dependency"""
     

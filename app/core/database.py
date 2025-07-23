@@ -69,6 +69,12 @@ async def create_indexes():
         await db.database.sessions.create_index("environment_id")
         await db.database.sessions.create_index("expires_at", expireAfterSeconds=0)
         
+        # Clusters collection indexes
+        await db.database.clusters.create_index("name", unique=True)
+        await db.database.clusters.create_index([("region", 1), ("is_default", 1)])
+        await db.database.clusters.create_index("status")
+        await db.database.clusters.create_index("created_by")
+        
         logger.info("Database indexes created successfully")
         
     except Exception as e:

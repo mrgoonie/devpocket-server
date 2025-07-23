@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from bson import ObjectId
+from .cluster import ClusterRegion
 
 class PyObjectId(ObjectId):
     @classmethod
@@ -19,6 +20,7 @@ class UserBase(BaseModel):
     username: str = Field(..., min_length=3, max_length=30)
     email: EmailStr
     full_name: Optional[str] = Field(None, max_length=100)
+    preferred_region: Optional[ClusterRegion] = ClusterRegion.US_EAST
     
     @field_validator("username")
     @classmethod
@@ -44,6 +46,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    preferred_region: Optional[ClusterRegion] = None
 
 class UserInDB(UserBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
