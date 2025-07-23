@@ -4,10 +4,12 @@ from datetime import datetime
 from enum import Enum
 from bson import ObjectId
 
+
 class PyObjectId(ObjectId):
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type, handler):
         from pydantic_core import core_schema
+
         return core_schema.no_info_before_validator_function(
             cls.validate,
             core_schema.str_schema(),
@@ -27,16 +29,19 @@ class PyObjectId(ObjectId):
     def __get_pydantic_json_schema__(cls, field_schema, handler):
         field_schema.update(type="string")
 
+
 class ClusterStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     MAINTENANCE = "maintenance"
+
 
 class ClusterRegion(str, Enum):
     US_EAST = "us-east"
     US_WEST = "us-west"
     EU_CENTRAL = "eu-central"
     ASIA_PACIFIC = "asia-pacific"
+
 
 class ClusterBase(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
@@ -45,16 +50,20 @@ class ClusterBase(BaseModel):
     endpoint: str = Field(..., description="Kubernetes API server endpoint")
     is_default: bool = False
     max_environments: int = Field(default=100, ge=1, le=1000)
-    
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v):
         if not v.replace("-", "").replace("_", "").isalnum():
-            raise ValueError("Cluster name must be alphanumeric with optional hyphens and underscores")
+            raise ValueError(
+                "Cluster name must be alphanumeric with optional hyphens and underscores"
+            )
         return v
+
 
 class ClusterCreate(ClusterBase):
     kube_config: str = Field(..., description="Base64 encoded kubeconfig content")
+
 
 class ClusterUpdate(BaseModel):
     name: Optional[str] = None
@@ -65,6 +74,7 @@ class ClusterUpdate(BaseModel):
     status: Optional[ClusterStatus] = None
     kube_config: Optional[str] = None
 
+
 class ClusterInDB(ClusterBase):
     id: str = Field(alias="_id")
     encrypted_kube_config: str = Field(..., description="Encrypted kubeconfig content")
@@ -73,10 +83,11 @@ class ClusterInDB(ClusterBase):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str
-    
+
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
+
 
 class ClusterResponse(ClusterBase):
     id: str
@@ -84,7 +95,8 @@ class ClusterResponse(ClusterBase):
     environments_count: int
     created_at: datetime
     updated_at: datetime
-    
+
+
 class ClusterHealthCheck(BaseModel):
     cluster_id: str
     status: ClusterStatus

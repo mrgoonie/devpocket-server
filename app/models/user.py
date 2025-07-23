@@ -4,10 +4,12 @@ from datetime import datetime
 from bson import ObjectId
 from .cluster import ClusterRegion
 
+
 class PyObjectId(ObjectId):
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type, handler):
         from pydantic_core import core_schema
+
         return core_schema.no_info_before_validator_function(
             cls.validate,
             core_schema.str_schema(),
@@ -27,22 +29,26 @@ class PyObjectId(ObjectId):
     def __get_pydantic_json_schema__(cls, field_schema, handler):
         field_schema.update(type="string")
 
+
 class UserBase(BaseModel):
     username: str = Field(..., min_length=3, max_length=30)
     email: EmailStr
     full_name: Optional[str] = Field(None, max_length=100)
     preferred_region: Optional[ClusterRegion] = ClusterRegion.US_EAST
-    
+
     @field_validator("username")
     @classmethod
     def username_alphanumeric(cls, v):
         if not v.replace("_", "").replace("-", "").isalnum():
-            raise ValueError("Username must be alphanumeric with optional underscores and hyphens")
+            raise ValueError(
+                "Username must be alphanumeric with optional underscores and hyphens"
+            )
         return v
+
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=100)
-    
+
     @field_validator("password")
     @classmethod
     def validate_password(cls, v):
@@ -54,10 +60,12 @@ class UserCreate(UserBase):
             raise ValueError("Password must contain at least one digit")
         return v
 
+
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
     preferred_region: Optional[ClusterRegion] = None
+
 
 class UserInDB(UserBase):
     id: str = Field(alias="_id")
@@ -72,10 +80,11 @@ class UserInDB(UserBase):
     last_login: Optional[datetime] = None
     failed_login_attempts: int = 0
     locked_until: Optional[datetime] = None
-    
+
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
+
 
 class UserResponse(UserBase):
     id: str
@@ -86,9 +95,11 @@ class UserResponse(UserBase):
     created_at: datetime
     last_login: Optional[datetime]
 
+
 class UserLogin(BaseModel):
     username_or_email: str
     password: str
+
 
 class Token(BaseModel):
     access_token: str
@@ -96,9 +107,11 @@ class Token(BaseModel):
     token_type: str = "bearer"
     expires_in: int
 
+
 class TokenData(BaseModel):
     user_id: Optional[str] = None
     username: Optional[str] = None
+
 
 class GoogleUserInfo(BaseModel):
     id: str
