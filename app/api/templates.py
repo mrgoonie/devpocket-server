@@ -70,6 +70,8 @@ async def list_templates(
     current_user: UserInDB = Depends(get_current_user)
 ) -> List[TemplateResponse]:
     """Get all available environment templates"""
+    # CRITICAL DEBUG: Check if endpoint is reached
+    print(f"[CRITICAL DEBUG] Templates endpoint called!")
     logger.info(
         "=== TEMPLATES ENDPOINT CALLED ===",
         endpoint="/api/v1/templates/",
