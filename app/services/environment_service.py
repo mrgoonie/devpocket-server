@@ -16,6 +16,7 @@ from app.models.environment import (
     EnvironmentMetrics,
 )
 from app.models.user import UserInDB
+from app.models.cluster import ClusterRegion
 
 logger = structlog.get_logger(__name__)
 
@@ -47,25 +48,27 @@ class EnvironmentService:
             pod_name = f"{env_data.name}-{uuid.uuid4().hex[:8]}"
             service_name = f"svc-{pod_name}"
 
-            # Create environment document
-            environment = EnvironmentInDB(
-                user_id=str(user.id),
-                name=env_data.name,
-                template=env_data.template,
-                status=EnvironmentStatus.CREATING,
-                resources=resources,
-                environment_variables=env_data.environment_variables or {},
-                namespace=namespace,
-                pod_name=pod_name,
-                service_name=service_name,
-            )
+            # Create environment document for database
+            env_dict = {
+                "user_id": str(user.id),
+                "name": env_data.name,
+                "template": env_data.template.value,
+                "status": EnvironmentStatus.CREATING.value,
+                "resources": resources.dict(),
+                "environment_variables": env_data.environment_variables or {},
+                "namespace": namespace,
+                "pod_name": pod_name,
+                "service_name": service_name,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            }
 
             # Save to database
-            env_dict = environment.dict(by_alias=True)
-            env_dict.pop("id", None)  # Remove id for insert
-
             result = await self.db.environments.insert_one(env_dict)
-            environment.id = result.inserted_id
+            
+            # Create EnvironmentInDB object with the inserted ID
+            env_dict["_id"] = str(result.inserted_id)
+            environment = EnvironmentInDB(**env_dict)
 
             # Create the actual container/pod (async)
             asyncio.create_task(self._create_container(environment))
@@ -113,8 +116,41 @@ class EnvironmentService:
 
         return resource_presets.get(user.subscription_plan, resource_presets["free"])
 
+    def _get_template_image(self, template: EnvironmentTemplate) -> str:
+        """Get Docker image for environment template"""
+        template_images = {
+            EnvironmentTemplate.PYTHON: "coder/code-server:latest",
+            EnvironmentTemplate.NODEJS: "coder/code-server:latest", 
+            EnvironmentTemplate.GOLANG: "coder/code-server:latest",
+            EnvironmentTemplate.UBUNTU: "coder/code-server:latest",
+        }
+        
+        return template_images.get(template, template_images[EnvironmentTemplate.UBUNTU])
+
+    def _double_resource(self, resource: str) -> str:
+        """Double a resource value (e.g., '500m' -> '1000m', '1Gi' -> '2Gi')"""
+        import re
+        
+        # Match number and unit
+        match = re.match(r'^(\d+)([a-zA-Z]*)$', resource)
+        if match:
+            value, unit = match.groups()
+            doubled_value = int(value) * 2
+            return f"{doubled_value}{unit}"
+        
+        # Fallback: return original if parsing fails
+        return resource
+
     async def _create_container(self, environment: EnvironmentInDB):
-        """Create the actual container/pod (simulated)"""
+        """Create the actual container/pod in Kubernetes"""
+        from app.services.cluster_service import cluster_service
+        import yaml
+        import base64
+        import tempfile
+        import os
+        from kubernetes import client, config as k8s_config
+        from kubernetes.client.exceptions import ApiException
+        
         try:
             # Update status to creating
             await self.db.environments.update_one(
@@ -122,36 +158,276 @@ class EnvironmentService:
                 {"$set": {"status": EnvironmentStatus.CREATING.value}},
             )
 
-            # Simulate container creation process
-            await asyncio.sleep(10)  # Simulated creation time
+            # Get cluster for the user's region (default to Southeast Asia)
+            cluster_service.set_database(self.db)
+            cluster = await cluster_service.get_cluster_by_region(ClusterRegion.SOUTHEAST_ASIA)
+            if not cluster:
+                raise Exception("No active cluster found for Southeast Asia region")
 
-            # In a real implementation, this would:
-            # 1. Create Kubernetes namespace
-            # 2. Create persistent volume claim
-            # 3. Create deployment with appropriate image
-            # 4. Create service for networking
-            # 5. Set up ingress for external access
+            # Get decrypted kubeconfig
+            kubeconfig_content = await cluster_service.get_decrypted_kubeconfig(cluster.id)
+            if not kubeconfig_content:
+                raise Exception("Failed to get kubeconfig for cluster")
 
-            # For now, simulate success
-            external_url = f"https://env-{environment.pod_name}.devpocket.io"
-            web_port = 8080
-            ssh_port = 2222
+            # Decode base64 kubeconfig
+            kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode('utf-8')
+            
+            # Create temporary kubeconfig file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_kubeconfig:
+                temp_kubeconfig.write(kubeconfig_yaml)
+                kubeconfig_path = temp_kubeconfig.name
 
-            # Update environment with created resources
-            await self.db.environments.update_one(
-                {"_id": environment.id},
-                {
-                    "$set": {
-                        "status": EnvironmentStatus.RUNNING.value,
-                        "external_url": external_url,
-                        "web_port": web_port,
-                        "ssh_port": ssh_port,
-                        "updated_at": datetime.utcnow(),
-                    }
-                },
-            )
+            try:
+                # Load kubeconfig
+                k8s_config.load_kube_config(config_file=kubeconfig_path)
+                
+                # Disable SSL verification for testing (should be configured properly in production)
+                import ssl
+                from kubernetes.client.configuration import Configuration
+                config = Configuration.get_default_copy()
+                config.verify_ssl = False
+                config.ssl_ca_cert = None
+                Configuration.set_default(config)
+                
+                # Initialize Kubernetes clients
+                v1_core = client.CoreV1Api()
+                v1_apps = client.AppsV1Api()
+                
+                # Step 1: Create namespace if it doesn't exist
+                try:
+                    v1_core.read_namespace(name=environment.namespace)
+                    logger.info(f"Namespace {environment.namespace} already exists")
+                except ApiException as e:
+                    if e.status == 404:
+                        # Create namespace
+                        namespace_manifest = client.V1Namespace(
+                            metadata=client.V1ObjectMeta(
+                                name=environment.namespace,
+                                labels={
+                                    "app": "devpocket",
+                                    "user-id": environment.user_id,
+                                    "managed-by": "devpocket-server"
+                                }
+                            )
+                        )
+                        v1_core.create_namespace(body=namespace_manifest)
+                        logger.info(f"Created namespace: {environment.namespace}")
+                    else:
+                        raise
 
-            logger.info(f"Environment created successfully: {environment.name}")
+                # Step 2: Create persistent volume claim
+                pvc_manifest = client.V1PersistentVolumeClaim(
+                    metadata=client.V1ObjectMeta(
+                        name=f"pvc-{environment.pod_name}",
+                        namespace=environment.namespace,
+                        labels={
+                            "app": "devpocket",
+                            "environment": environment.pod_name,
+                            "user-id": environment.user_id
+                        }
+                    ),
+                    spec=client.V1PersistentVolumeClaimSpec(
+                        access_modes=["ReadWriteOnce"],
+                        resources=client.V1ResourceRequirements(
+                            requests={"storage": environment.resources.storage}
+                        )
+                    )
+                )
+                
+                try:
+                    v1_core.create_namespaced_persistent_volume_claim(
+                        namespace=environment.namespace,
+                        body=pvc_manifest
+                    )
+                    logger.info(f"Created PVC for environment: {environment.pod_name}")
+                except ApiException as e:
+                    if e.status != 409:  # Ignore if already exists
+                        raise
+
+                # Step 3: Create deployment
+                deployment_manifest = client.V1Deployment(
+                    metadata=client.V1ObjectMeta(
+                        name=environment.pod_name,
+                        namespace=environment.namespace,
+                        labels={
+                            "app": "devpocket",
+                            "environment": environment.pod_name,
+                            "user-id": environment.user_id,
+                            "template": environment.template.value
+                        }
+                    ),
+                    spec=client.V1DeploymentSpec(
+                        replicas=1,
+                        selector=client.V1LabelSelector(
+                            match_labels={
+                                "app": "devpocket",
+                                "environment": environment.pod_name
+                            }
+                        ),
+                        template=client.V1PodTemplateSpec(
+                            metadata=client.V1ObjectMeta(
+                                labels={
+                                    "app": "devpocket",
+                                    "environment": environment.pod_name,
+                                    "user-id": environment.user_id
+                                }
+                            ),
+                            spec=client.V1PodSpec(
+                                containers=[
+                                    client.V1Container(
+                                        name="devpocket-env",
+                                        image=self._get_template_image(environment.template),
+                                        command=["/usr/bin/entrypoint.sh"],
+                                        args=["--bind-addr", "0.0.0.0:8080", "--auth", "none", "--disable-telemetry"],
+                                        ports=[
+                                            client.V1ContainerPort(container_port=8080, name="web"),
+                                            client.V1ContainerPort(container_port=22, name="ssh")
+                                        ],
+                                        resources=client.V1ResourceRequirements(
+                                            requests={
+                                                "cpu": environment.resources.cpu,
+                                                "memory": environment.resources.memory
+                                            },
+                                            limits={
+                                                "cpu": self._double_resource(environment.resources.cpu),
+                                                "memory": self._double_resource(environment.resources.memory)
+                                            }
+                                        ),
+                                        env=[
+                                            client.V1EnvVar(name=k, value=v) 
+                                            for k, v in environment.environment_variables.items()
+                                        ] + [
+                                            client.V1EnvVar(name="USER_ID", value=environment.user_id),
+                                            client.V1EnvVar(name="ENVIRONMENT_NAME", value=environment.name),
+                                        ],
+                                        volume_mounts=[
+                                            client.V1VolumeMount(
+                                                name="workspace",
+                                                mount_path="/workspace"
+                                            )
+                                        ],
+                                        working_dir="/workspace",
+                                        security_context=client.V1SecurityContext(
+                                            run_as_non_root=True,
+                                            run_as_user=1000,
+                                            run_as_group=1000
+                                        )
+                                    )
+                                ],
+                                volumes=[
+                                    client.V1Volume(
+                                        name="workspace",
+                                        persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                            claim_name=f"pvc-{environment.pod_name}"
+                                        )
+                                    )
+                                ],
+                                security_context=client.V1PodSecurityContext(
+                                    fs_group=1000
+                                )
+                            )
+                        )
+                    )
+                )
+
+                v1_apps.create_namespaced_deployment(
+                    namespace=environment.namespace,
+                    body=deployment_manifest
+                )
+                logger.info(f"Created deployment: {environment.pod_name}")
+
+                # Step 4: Create service
+                service_manifest = client.V1Service(
+                    metadata=client.V1ObjectMeta(
+                        name=environment.service_name,
+                        namespace=environment.namespace,
+                        labels={
+                            "app": "devpocket",
+                            "environment": environment.pod_name,
+                            "user-id": environment.user_id
+                        }
+                    ),
+                    spec=client.V1ServiceSpec(
+                        selector={
+                            "app": "devpocket",
+                            "environment": environment.pod_name
+                        },
+                        ports=[
+                            client.V1ServicePort(
+                                name="web",
+                                port=8080,
+                                target_port=8080,
+                                protocol="TCP"
+                            ),
+                            client.V1ServicePort(
+                                name="ssh",
+                                port=22,
+                                target_port=22,
+                                protocol="TCP"
+                            )
+                        ],
+                        type="ClusterIP"
+                    )
+                )
+
+                v1_core.create_namespaced_service(
+                    namespace=environment.namespace,
+                    body=service_manifest
+                )
+                logger.info(f"Created service: {environment.service_name}")
+
+                # Wait for deployment to be ready (with timeout)
+                import time
+                max_wait = 300  # 5 minutes
+                wait_interval = 10
+                waited = 0
+                
+                while waited < max_wait:
+                    try:
+                        deployment = v1_apps.read_namespaced_deployment(
+                            name=environment.pod_name,
+                            namespace=environment.namespace
+                        )
+                        
+                        if (deployment.status.ready_replicas == 1 and 
+                            deployment.status.available_replicas == 1):
+                            logger.info(f"Deployment {environment.pod_name} is ready")
+                            break
+                            
+                    except ApiException:
+                        pass
+                    
+                    await asyncio.sleep(wait_interval)
+                    waited += wait_interval
+                
+                if waited >= max_wait:
+                    raise Exception("Deployment failed to become ready within 5 minutes")
+
+                # Update environment with created resources
+                external_url = f"https://env-{environment.pod_name}.devpocket.io"
+                internal_url = f"http://{environment.service_name}.{environment.namespace}.svc.cluster.local:8080"
+                
+                await self.db.environments.update_one(
+                    {"_id": environment.id},
+                    {
+                        "$set": {
+                            "status": EnvironmentStatus.RUNNING.value,
+                            "cluster_id": cluster.id,
+                            "internal_url": internal_url,
+                            "external_url": external_url,
+                            "web_port": 8080,
+                            "ssh_port": 22,
+                            "updated_at": datetime.utcnow(),
+                        }
+                    },
+                )
+
+                logger.info(f"Environment created successfully: {environment.name}")
+
+            finally:
+                # Clean up temporary kubeconfig file
+                if os.path.exists(kubeconfig_path):
+                    os.unlink(kubeconfig_path)
 
         except Exception as e:
             logger.error(

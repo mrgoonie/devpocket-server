@@ -230,7 +230,16 @@ class ClusterService:
         if self.db is None:
             raise ValueError("Database not initialized")
 
-        cluster_data = await self.db.clusters.find_one({"_id": cluster_id})
+        from bson import ObjectId
+        try:
+            # Try to convert to ObjectId if it's a string
+            if isinstance(cluster_id, str):
+                cluster_data = await self.db.clusters.find_one({"_id": ObjectId(cluster_id)})
+            else:
+                cluster_data = await self.db.clusters.find_one({"_id": cluster_id})
+        except Exception:
+            # If conversion fails, try with the original value
+            cluster_data = await self.db.clusters.find_one({"_id": cluster_id})
         if not cluster_data:
             return None
 
