@@ -107,7 +107,7 @@ async def list_templates(
         # Filter out deprecated templates for non-admin users
         # All users can see active templates, only admins can see deprecated ones
         initial_count = len(templates)
-        is_admin = current_user.subscription_plan in ["pro", "admin"]
+        is_admin = current_user.subscription_plan == "admin"
         
         if not is_admin:
             templates = [t for t in templates if t.status != TemplateStatus.DEPRECATED]
