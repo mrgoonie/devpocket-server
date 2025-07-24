@@ -20,7 +20,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
-@router.post("/", response_model=ClusterResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ClusterResponse, status_code=status.HTTP_201_CREATED)
 async def create_cluster(
     cluster_data: ClusterCreate,
     current_user: UserInDB = Depends(require_admin),
@@ -62,8 +62,6 @@ async def create_cluster(
         )
 
 
-# Handle both trailing slash and non-trailing slash URLs
-@router.get("/", response_model=List[ClusterResponse])
 @router.get("", response_model=List[ClusterResponse])
 async def list_clusters(
     region: Optional[ClusterRegion] = Query(None, description="Filter by region"),

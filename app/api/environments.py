@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.post(
-    "/", 
+    "",
     response_model=EnvironmentResponse, 
     status_code=status.HTTP_201_CREATED,
     summary="Create a new environment",
@@ -107,8 +107,6 @@ async def create_environment(
         )
 
 
-# Handle both trailing slash and non-trailing slash URLs
-@router.get("/", response_model=List[EnvironmentResponse])
 @router.get("", response_model=List[EnvironmentResponse])
 async def list_environments(
     current_user: UserInDB = Depends(get_current_user),

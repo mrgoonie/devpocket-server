@@ -18,8 +18,6 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-# Handle both trailing slash and non-trailing slash URLs
-@router.get("/", response_model=List[TemplateResponse])
 @router.get("", response_model=List[TemplateResponse])
 async def list_templates(
     category: Optional[TemplateCategory] = Query(None, description="Filter by template category"),
@@ -219,7 +217,7 @@ async def get_template(
 
 
 @router.post(
-    "/",
+    "",
     response_model=TemplateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new template",
