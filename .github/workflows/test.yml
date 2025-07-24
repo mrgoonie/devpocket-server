@@ -1,0 +1,260 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, dev/*, feature/* ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: "3.11"
+  MONGODB_VERSION: "6.0"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:6.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: testpassword
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+
+    - name: Wait for MongoDB
+      run: |
+        until mongosh --host localhost:27017 --username root --password testpassword --authenticationDatabase admin --eval "db.adminCommand('ping')" > /dev/null 2>&1; do
+          echo "Waiting for MongoDB..."
+          sleep 2
+        done
+        echo "MongoDB is ready!"
+
+    - name: Wait for Redis
+      run: |
+        until redis-cli -h localhost -p 6379 ping > /dev/null 2>&1; do
+          echo "Waiting for Redis..."
+          sleep 2
+        done
+        echo "Redis is ready!"
+
+    - name: Run linter (if configured)
+      run: |
+        if [ -f "pyproject.toml" ] && grep -q "black" requirements-test.txt; then
+          echo "Running Black formatter check..."
+          black --check app/ tests/
+        fi
+        if [ -f "pyproject.toml" ] && grep -q "flake8" requirements-test.txt; then
+          echo "Running Flake8 linter..."
+          flake8 app/ tests/
+        fi
+      continue-on-error: true
+
+    - name: Run tests with pytest
+      env:
+        MONGODB_URL: "mongodb://root:testpassword@localhost:27017/?authSource=admin"
+        REDIS_URL: "redis://localhost:6379"
+        SECRET_KEY: "test-secret-key-for-github-actions-that-is-long-enough"
+        DATABASE_NAME: "devpocket_test"
+        DEBUG: "True"
+        GOOGLE_CLIENT_ID: "fake-client-id"
+        GOOGLE_CLIENT_SECRET: "fake-client-secret"
+        ENVIRONMENT: "test"
+        LOG_LEVEL: "INFO"
+      run: |
+        pytest tests/ -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=70
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    - name: Test template initialization
+      env:
+        MONGODB_URL: "mongodb://root:testpassword@localhost:27017/?authSource=admin"
+        SECRET_KEY: "test-secret-key-for-github-actions-that-is-long-enough"
+        DATABASE_NAME: "devpocket_test_init"
+        DEBUG: "True"
+      run: |
+        echo "Testing template initialization..."
+        python -c "
+        import asyncio
+        import sys
+        sys.path.insert(0, '.')
+        
+        async def test_init():
+            from app.services.template_service import template_service
+            from motor.motor_asyncio import AsyncIOMotorClient
+            
+            client = AsyncIOMotorClient('mongodb://root:testpassword@localhost:27017/?authSource=admin')
+            db = client['devpocket_test_init']
+            template_service.set_database(db)
+            
+            await template_service.initialize_default_templates()
+            templates = await template_service.list_templates()
+            
+            assert len(templates) >= 5
+            template_names = [t.name for t in templates]
+            assert 'python' in template_names
+            assert 'nodejs' in template_names
+            print(f'✅ Successfully initialized {len(templates)} templates')
+            
+            client.close()
+        
+        asyncio.run(test_init())
+        "
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  build-test:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: |
+        docker build -t devpocket-api:test .
+
+    - name: Test Docker image
+      run: |
+        # Test that the image can start
+        docker run -d --name test-container \
+          -e MONGODB_URL="mongodb://test:test@localhost:27017/test" \
+          -e SECRET_KEY="test-secret-key" \
+          -p 8000:8000 \
+          devpocket-api:test
+        
+        # Wait for container to start
+        sleep 10
+        
+        # Test health endpoint
+        docker exec test-container curl -f http://localhost:8000/health || exit 1
+        
+        # Cleanup
+        docker stop test-container
+        docker rm test-container
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    services:
+      mongodb:
+        image: mongo:6.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: testpassword
+        ports:
+          - 27017:27017
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install httpx pytest
+
+    - name: Start API server
+      env:
+        MONGODB_URL: "mongodb://root:testpassword@localhost:27017/?authSource=admin"
+        SECRET_KEY: "test-secret-key-for-integration-tests"
+        DATABASE_NAME: "devpocket_integration"
+        DEBUG: "True"
+      run: |
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        echo $! > api_server.pid
+        
+        # Wait for server to start
+        sleep 10
+
+    - name: Run integration tests
+      run: |
+        # Test API endpoints
+        curl -f http://localhost:8000/health
+        curl -f http://localhost:8000/api/v1/info
+        
+        # Test OpenAPI docs
+        curl -f http://localhost:8000/docs
+        curl -f http://localhost:8000/openapi.json
+
+    - name: Cleanup
+      run: |
+        if [ -f api_server.pid ]; then
+          kill $(cat api_server.pid) || true
+        fi

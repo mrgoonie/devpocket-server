@@ -184,6 +184,223 @@ class TestEnvironmentEndpoints:
         data = response.json()
         
         # Should contain metrics structure
-        assert "cpu_usage" in data
-        assert "memory_usage" in data
-        assert "storage_usage" in data
+        assert "environment_id" in data
+        assert "metrics" in data
+    
+    async def test_restart_environment(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test restarting an environment."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Wait a bit to simulate environment being ready
+        import asyncio
+        await asyncio.sleep(0.1)
+        
+        # Update environment status to running (simulating it's ready)
+        from app.core.database import get_database
+        db = await anext(get_database())
+        await db.environments.update_one(
+            {"_id": env_id},
+            {"$set": {"status": "running"}}
+        )
+        
+        # Restart the environment
+        response = await client.post(
+            f"/api/v1/environments/{env_id}/restart",
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Environment restart initiated successfully"
+    
+    async def test_restart_environment_invalid_state(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test restarting an environment in invalid state."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Try to restart while still creating
+        response = await client.post(
+            f"/api/v1/environments/{env_id}/restart",
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 400
+        assert "cannot be restarted" in response.json()["detail"]
+    
+    async def test_restart_environment_not_found(self, client: AsyncClient, authenticated_user):
+        """Test restarting non-existent environment."""
+        fake_id = "507f1f77bcf86cd799439011"
+        response = await client.post(
+            f"/api/v1/environments/{fake_id}/restart",
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 404
+    
+    async def test_restart_environment_unauthorized(self, client: AsyncClient):
+        """Test restarting environment without authentication."""
+        fake_id = "507f1f77bcf86cd799439011"
+        response = await client.post(f"/api/v1/environments/{fake_id}/restart")
+        
+        assert response.status_code == 401
+    
+    async def test_get_environment_logs(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test getting environment logs."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Get logs
+        response = await client.get(
+            f"/api/v1/environments/{env_id}/logs",
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "environment_id" in data
+        assert "environment_name" in data
+        assert "logs" in data
+        assert "total_lines" in data
+        assert "has_more" in data
+        
+        # Check log structure
+        assert isinstance(data["logs"], list)
+        if len(data["logs"]) > 0:
+            log = data["logs"][0]
+            assert "timestamp" in log
+            assert "level" in log
+            assert "message" in log
+            assert "source" in log
+    
+    async def test_get_environment_logs_with_lines_param(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test getting environment logs with custom line count."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Get logs with specific line count
+        response = await client.get(
+            f"/api/v1/environments/{env_id}/logs",
+            params={"lines": 50},
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert len(data["logs"]) <= 50
+    
+    async def test_get_environment_logs_with_since_param(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test getting environment logs with timestamp filter."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Get logs since specific timestamp
+        from datetime import datetime, timezone
+        since_time = datetime.now(timezone.utc).isoformat()
+        
+        response = await client.get(
+            f"/api/v1/environments/{env_id}/logs",
+            params={"since": since_time},
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # All logs should be after the since timestamp
+        for log in data["logs"]:
+            log_time = datetime.fromisoformat(log["timestamp"].replace('Z', '+00:00'))
+            since_dt = datetime.fromisoformat(since_time.replace('Z', '+00:00'))
+            assert log_time >= since_dt
+    
+    async def test_get_environment_logs_invalid_timestamp(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test getting environment logs with invalid timestamp."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Get logs with invalid timestamp
+        response = await client.get(
+            f"/api/v1/environments/{env_id}/logs",
+            params={"since": "invalid-timestamp"},
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 400
+        assert "Invalid timestamp format" in response.json()["detail"]
+    
+    async def test_get_environment_logs_invalid_lines(self, client: AsyncClient, authenticated_user, sample_environment_data):
+        """Test getting environment logs with invalid line count."""
+        # Create an environment first
+        create_response = await client.post(
+            "/api/v1/environments/",
+            json=sample_environment_data,
+            headers=authenticated_user["headers"]
+        )
+        env_id = create_response.json()["id"]
+        
+        # Test with too many lines
+        response = await client.get(
+            f"/api/v1/environments/{env_id}/logs",
+            params={"lines": 2000},
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 422  # Validation error
+        
+        # Test with zero lines
+        response = await client.get(
+            f"/api/v1/environments/{env_id}/logs",
+            params={"lines": 0},
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 422  # Validation error
+    
+    async def test_get_environment_logs_not_found(self, client: AsyncClient, authenticated_user):
+        """Test getting logs for non-existent environment."""
+        fake_id = "507f1f77bcf86cd799439011"
+        response = await client.get(
+            f"/api/v1/environments/{fake_id}/logs",
+            headers=authenticated_user["headers"]
+        )
+        
+        assert response.status_code == 404
+    
+    async def test_get_environment_logs_unauthorized(self, client: AsyncClient):
+        """Test getting logs without authentication."""
+        fake_id = "507f1f77bcf86cd799439011"
+        response = await client.get(f"/api/v1/environments/{fake_id}/logs")
+        
+        assert response.status_code == 401

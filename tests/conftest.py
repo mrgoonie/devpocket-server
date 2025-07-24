@@ -71,7 +71,7 @@ async def clean_database(test_database: Database):
     # Recreate indexes
     await test_database.create_indexes()
     
-    yield test_database
+    return test_database.db
     
 
 @pytest.fixture
@@ -125,4 +125,44 @@ def sample_environment_data():
         "name": "test-env",
         "template": "python",
         "description": "Test environment"
+    }
+
+
+@pytest.fixture
+async def admin_user(client: AsyncClient, clean_database):
+    """Create and return authenticated admin user with token."""
+    # Create admin user data
+    admin_data = {
+        "username": "adminuser",
+        "email": "admin@example.com",
+        "password": "AdminPassword123",
+        "full_name": "Admin User"
+    }
+    
+    # Register user
+    register_response = await client.post("/api/v1/auth/register", json=admin_data)
+    assert register_response.status_code == 201
+    
+    # Update user to admin in database
+    from app.core.database import get_database
+    db = await anext(get_database())
+    await db.users.update_one(
+        {"username": "adminuser"},
+        {"$set": {"subscription_plan": "admin"}}
+    )
+    
+    # Login user
+    login_data = {
+        "username_or_email": admin_data["username"],
+        "password": admin_data["password"]
+    }
+    login_response = await client.post("/api/v1/auth/login", json=login_data)
+    assert login_response.status_code == 200
+    
+    token_data = login_response.json()
+    
+    return {
+        "user": register_response.json(),
+        "token": token_data["access_token"],
+        "headers": {"Authorization": f"Bearer {token_data['access_token']}"}
     }
