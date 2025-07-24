@@ -24,7 +24,7 @@ class TemplateService:
         """Set database instance"""
         self.db = db
     
-    async def get_default_templates(self) -> List[TemplateInDB]:
+    async def get_default_templates(self) -> List[dict]:
         """Get list of default templates"""
         default_templates = [
             {
@@ -165,17 +165,17 @@ class TemplateService:
             }
         ]
         
-        templates = []
         for template_data in default_templates:
             template_data.update({
+                "status": TemplateStatus.ACTIVE,
+                "version": "1.0.0",
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
                 "created_by": "system",
                 "usage_count": 0
             })
-            templates.append(TemplateInDB(**template_data))
         
-        return templates
+        return default_templates
     
     async def list_templates(
         self, 
@@ -328,14 +328,12 @@ class TemplateService:
         
         default_templates = await self.get_default_templates()
         
-        for template in default_templates:
+        for template_dict in default_templates:
             # Check if template already exists
-            existing = await self.get_template_by_name(template.name)
+            existing = await self.get_template_by_name(template_dict["name"])
             if not existing:
-                template_dict = template.model_dump(by_alias=True)
-                template_dict.pop("id", None)
                 await self.db.templates.insert_one(template_dict)
-                logger.info(f"Initialized default template: {template.name}")
+                logger.info(f"Initialized default template: {template_dict['name']}")
 
 
 # Global instance

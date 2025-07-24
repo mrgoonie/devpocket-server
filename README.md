@@ -102,9 +102,20 @@ DEBUG=true
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
 
-Add a default cluster credentials to database
+#### Database Seeding
 ```bash
-ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
+# Add a default cluster credentials to database
+export ENV_FILE=.env.prod
+python3 scripts/add_default_ovh_cluster.py
+
+# Show available default templates (no database required)
+python3 scripts/show_default_templates.py
+
+# Seed default environment templates (requires MongoDB)
+python3 scripts/seed_templates.py
+
+# Force reseed templates (removes existing ones first)
+python3 scripts/seed_templates.py --force
 ```
 
 ### 3. Start with Docker Compose

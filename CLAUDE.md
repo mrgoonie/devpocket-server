@@ -111,6 +111,27 @@ curl http://localhost:8000/health
 open http://localhost:8000/docs
 ```
 
+### Database Seeding
+```bash
+# Add a default cluster credentials to database
+ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
+
+# Show available default templates (no database required)
+python3 scripts/show_default_templates.py
+
+# Show templates with production config
+ENV_FILE=.env.prod python3 scripts/show_default_templates.py
+
+# Seed default environment templates (requires MongoDB)
+python3 scripts/seed_templates.py
+
+# Seed with production config
+ENV_FILE=.env.prod python3 scripts/seed_templates.py
+
+# Force reseed templates (removes existing ones first)
+python3 scripts/seed_templates.py --force
+```
+
 ## Important Implementation Details
 
 **Authentication Flow**: JWT tokens are created in `auth_service.create_tokens()` and validated in `middleware.auth.get_current_user()`. Google OAuth uses `google.auth` library for token verification.
