@@ -215,17 +215,17 @@ class EnvironmentService:
                     else:
                         raise
 
-                # Step 2: Create persistent volume claims for workspace and system directories
-                # Workspace PVC
-                workspace_pvc_manifest = client.V1PersistentVolumeClaim(
+                # Step 2: Create persistent volume claims for home and system directories
+                # Home directory PVC (contains user data, config, workspace)
+                home_pvc_manifest = client.V1PersistentVolumeClaim(
                     metadata=client.V1ObjectMeta(
-                        name=f"workspace-{environment.pod_name}",
+                        name=f"home-{environment.pod_name}",
                         namespace=environment.namespace,
                         labels={
                             "app": "devpocket",
                             "environment": environment.pod_name,
                             "user-id": environment.user_id,
-                            "volume-type": "workspace"
+                            "volume-type": "home"
                         }
                     ),
                     spec=client.V1PersistentVolumeClaimSpec(
@@ -259,12 +259,12 @@ class EnvironmentService:
                 )
                 
                 try:
-                    # Create workspace PVC
+                    # Create home PVC
                     v1_core.create_namespaced_persistent_volume_claim(
                         namespace=environment.namespace,
-                        body=workspace_pvc_manifest
+                        body=home_pvc_manifest
                     )
-                    logger.info(f"Created workspace PVC for environment: {environment.pod_name}")
+                    logger.info(f"Created home PVC for environment: {environment.pod_name}")
                     
                     # Create system PVC
                     v1_core.create_namespaced_persistent_volume_claim(
@@ -311,7 +311,7 @@ class EnvironmentService:
                                         name="devpocket-env",
                                         image=self._get_template_image(environment.template),
                                         command=["/bin/bash"],
-                                        args=["-c", "sleep infinity"],
+                                        args=["-c", "useradd -m -s /bin/bash devuser && mkdir -p /home/devuser/workspace && ln -sf /home/devuser/workspace /workspace && sleep infinity"],
                                         ports=[
                                             client.V1ContainerPort(container_port=8080, name="web"),
                                             client.V1ContainerPort(container_port=22, name="ssh")
@@ -335,8 +335,8 @@ class EnvironmentService:
                                         ],
                                         volume_mounts=[
                                             client.V1VolumeMount(
-                                                name="workspace",
-                                                mount_path="/workspace"
+                                                name="home-dir",
+                                                mount_path="/home"
                                             ),
                                             client.V1VolumeMount(
                                                 name="system-dirs",
@@ -353,15 +353,15 @@ class EnvironmentService:
                                                 sub_path="opt"
                                             )
                                         ],
-                                        working_dir="/workspace",
+                                        working_dir="/home/devuser/workspace",
                                         # Allow root for initial setup
                                     )
                                 ],
                                 volumes=[
                                     client.V1Volume(
-                                        name="workspace",
+                                        name="home-dir",
                                         persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                            claim_name=f"workspace-{environment.pod_name}"
+                                            claim_name=f"home-{environment.pod_name}"
                                         )
                                     ),
                                     client.V1Volume(

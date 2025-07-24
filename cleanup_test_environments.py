@@ -100,7 +100,7 @@ async def cleanup_kubernetes_resources():
                                 namespace=namespace
                             )
                     
-                    # Delete all PVCs
+                    # Delete all PVCs (home, workspace, and system)
                     pvcs = v1_core.list_namespaced_persistent_volume_claim(namespace=namespace)
                     for pvc in pvcs.items:
                         print(f"   💾 Deleting PVC: {pvc.metadata.name}")
