@@ -1,0 +1,80 @@
+[project]
+name = "devpocket-server"
+version = "0.1.0"
+description = "Production-ready FastAPI backend for a mobile-first cloud IDE"
+authors = [
+    {name = "DevPocket Team", email = "team@devpocket.com"}
+]
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["fastapi", "cloud-ide", "mobile", "development", "containers"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Tools",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+build_command = "pip install -e ."
+upload_to_vcs_release = true
+commit_author = "semantic-release <semantic-release@devpocket.com>"
+commit_message = "chore(release): v{version} [skip ci]"
+tag_format = "v{version}"
+major_on_zero = true
+allow_zero_version = true
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.dev]
+match = "dev/*"
+prerelease = true
+prerelease_token = "dev"
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+    "^(chore|ci|docs|style|refactor|test).*",
+    "^Merge.*",
+    "^(bump|version).*"
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+output_format = "md"
+
+[tool.semantic_release.remote]
+name = "origin"
+type = "github"
+ignore_token_for_push = false
+
+[tool.semantic_release.publish]
+dist_glob_patterns = ["dist/*"]
+upload_to_vcs_release = true
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+default_bump = "patch"

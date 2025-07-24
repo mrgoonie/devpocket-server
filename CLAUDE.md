@@ -132,6 +132,45 @@ ENV_FILE=.env.prod python3 scripts/seed_templates.py
 python3 scripts/seed_templates.py --force
 ```
 
+### Release Management
+
+This project uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) for automated versioning and releases.
+
+```bash
+# Check what the next version would be (dry run)
+semantic-release version --noop --print
+
+# Create a new release locally (for testing)
+semantic-release version
+
+# Preview changelog for next version
+semantic-release changelog --unreleased
+```
+
+#### Commit Message Format
+
+Follow [Conventional Commits](https://conventionalcommits.org/) for automatic version bumping:
+
+- `feat:` - New features (minor version bump)
+- `fix:` - Bug fixes (patch version bump)  
+- `perf:` - Performance improvements (patch version bump)
+- `BREAKING CHANGE:` - Breaking changes (major version bump)
+- `chore:`, `docs:`, `style:`, `refactor:`, `test:` - No version bump
+
+#### Automated Release Process
+
+Releases are automatically created when commits are pushed to:
+- `main` branch - Creates production releases
+- `dev/*` branches - Creates pre-release versions with `-dev` suffix
+
+The release workflow:
+1. Analyzes commit messages since last release
+2. Determines next version number using semantic versioning
+3. Updates version in `pyproject.toml`
+4. Generates/updates `CHANGELOG.md`
+5. Creates Git tag and GitHub release
+6. Builds and deploys Docker image to production (main branch only)
+
 ## Important Implementation Details
 
 **Authentication Flow**: JWT tokens are created in `auth_service.create_tokens()` and validated in `middleware.auth.get_current_user()`. Google OAuth uses `google.auth` library for token verification.

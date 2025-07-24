@@ -1,8 +1,8 @@
-name: Build and Deploy to Production
+name: Build and Test
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev/* ]
   pull_request:
     branches: [ main ]
 
@@ -54,26 +54,23 @@ jobs:
       run: |
         docker compose -f docker-compose.test.yml down -v --remove-orphans
 
-  # Job 2: Build and Deploy (only on main branch)
-  build-and-deploy:
-    name: Deploy to [devpocket.goon.vn]
+  # Job 2: Build verification (no deployment - handled by release.yml)
+  build-verification:
+    name: Verify Build Process
     runs-on: ubuntu-latest
-    if: always() && !cancelled() && !failure() && contains(github.ref, 'main')
+    needs: test
+    if: always() && !cancelled() && !failure()
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Deploy with DXUP
-        uses: "digitopvn/diginext-actions@v2"
-        with:
-          api_key: ${{ secrets.DX_API_KEY }}
-          cluster: dxupprod
-          registry: digitopdockerhub
-          deploy_env: prod
-          tail: true
-          port: 8000
+      - name: Test production build
+        run: |
+          echo "Building production image for verification..."
+          docker build --platform linux/amd64 -t test-build .
 
   # build-and-deploy:
   #   name: Build and Deploy to Production
@@ -203,14 +200,14 @@ jobs:
 
   # Job 3: Notification on failure
   notify-failure:
-    name: Notify on Deployment Failure
+    name: Notify on Build Failure
     runs-on: ubuntu-latest
-    needs: [build-and-deploy]
+    needs: [test, build-verification]
     if: failure()
     
     steps:
     - name: Notify failure
       run: |
-        echo "Deployment failed! Check the logs above for details."
+        echo "Build or test failed! Check the logs above for details."
         echo "Failed commit: ${{ github.sha }}"
         echo "Failed branch: ${{ github.ref }}"
