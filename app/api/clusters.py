@@ -62,7 +62,9 @@ async def create_cluster(
         )
 
 
+# Handle both trailing slash and non-trailing slash URLs
 @router.get("/", response_model=List[ClusterResponse])
+@router.get("", response_model=List[ClusterResponse])
 async def list_clusters(
     region: Optional[ClusterRegion] = Query(None, description="Filter by region"),
     current_user: UserInDB = Depends(require_admin),

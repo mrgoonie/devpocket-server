@@ -18,51 +18,9 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-@router.get(
-    "/",
-    response_model=List[TemplateResponse],
-    summary="List all templates",
-    description="Get a list of all available environment templates with optional filtering by category and status",
-    responses={
-        200: {
-            "description": "Successfully retrieved templates",
-            "content": {
-                "application/json": {
-                    "example": [
-                        {
-                            "id": "507f1f77bcf86cd799439011",
-                            "name": "python",
-                            "display_name": "Python 3.11",
-                            "description": "Python development environment with pip, virtualenv, and common packages",
-                            "category": "programming_language",
-                            "tags": ["python", "python3", "pip", "flask", "django"],
-                            "docker_image": "python:3.11-slim",
-                            "default_port": 8080,
-                            "default_resources": {
-                                "cpu": "500m",
-                                "memory": "1Gi",
-                                "storage": "10Gi"
-                            },
-                            "environment_variables": {
-                                "PYTHONPATH": "/workspace"
-                            },
-                            "startup_commands": ["pip install --upgrade pip"],
-                            "documentation_url": "https://docs.python.org/3/",
-                            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg",
-                            "status": "active",
-                            "version": "1.0.0",
-                            "created_at": "2024-01-01T00:00:00Z",
-                            "updated_at": "2024-01-01T00:00:00Z",
-                            "usage_count": 42
-                        }
-                    ]
-                }
-            }
-        },
-        401: {"description": "Unauthorized - Invalid or missing token"},
-        500: {"description": "Internal server error"}
-    }
-)
+# Handle both trailing slash and non-trailing slash URLs
+@router.get("/", response_model=List[TemplateResponse])
+@router.get("", response_model=List[TemplateResponse])
 async def list_templates(
     category: Optional[TemplateCategory] = Query(None, description="Filter by template category"),
     status_filter: Optional[TemplateStatus] = Query(None, alias="status", description="Filter by template status"),

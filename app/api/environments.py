@@ -107,43 +107,9 @@ async def create_environment(
         )
 
 
-@router.get(
-    "/", 
-    response_model=List[EnvironmentResponse],
-    summary="List user environments",
-    description="Get a list of all environments owned by the current user",
-    responses={
-        200: {
-            "description": "Environments retrieved successfully",
-            "content": {
-                "application/json": {
-                    "example": [
-                        {
-                            "id": "507f1f77bcf86cd799439011",
-                            "name": "my-python-env",
-                            "template": "python",
-                            "status": "running",
-                            "resources": {
-                                "cpu": "500m",
-                                "memory": "1Gi",
-                                "storage": "10Gi"
-                            },
-                            "external_url": "https://env-abc123.devpocket.com",
-                            "web_port": 8080,
-                            "created_at": "2024-01-01T00:00:00Z",
-                            "last_accessed": "2024-01-01T12:00:00Z",
-                            "cpu_usage": 25.5,
-                            "memory_usage": 512.0,
-                            "storage_usage": 1024.0
-                        }
-                    ]
-                }
-            }
-        },
-        **get_auth_error_responses(),
-        **get_error_responses(500)
-    }
-)
+# Handle both trailing slash and non-trailing slash URLs
+@router.get("/", response_model=List[EnvironmentResponse])
+@router.get("", response_model=List[EnvironmentResponse])
 async def list_environments(
     current_user: UserInDB = Depends(get_current_user),
     status_filter: Optional[EnvironmentStatus] = Query(
