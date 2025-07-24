@@ -328,3 +328,86 @@ async def get_environment_metrics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not retrieve metrics",
         )
+
+
+@router.post("/{environment_id}/restart")
+async def restart_environment(
+    environment_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+    db=Depends(get_database),
+):
+    """Restart an environment"""
+    try:
+        environment_service.set_database(db)
+
+        # Restart environment
+        success = await environment_service.restart_environment(
+            environment_id, str(current_user.id)
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Environment not found or cannot be restarted",
+            )
+
+        # Audit log
+        audit_log(
+            action="environment_restarted",
+            user_id=str(current_user.id),
+            details={"environment_id": environment_id},
+        )
+
+        return {"message": "Environment restart initiated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Environment restart error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not restart environment",
+        )
+
+
+@router.get("/{environment_id}/logs")
+async def get_environment_logs(
+    environment_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+    lines: int = Query(100, description="Number of log lines to retrieve", ge=1, le=1000),
+    since: Optional[str] = Query(None, description="Get logs since timestamp (ISO format)"),
+    db=Depends(get_database),
+):
+    """Get environment logs"""
+    try:
+        environment_service.set_database(db)
+
+        # Parse since timestamp if provided
+        since_timestamp = None
+        if since:
+            try:
+                from datetime import datetime
+                since_timestamp = datetime.fromisoformat(since.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid timestamp format. Use ISO format (e.g., 2024-01-01T12:00:00Z)"
+                )
+
+        # Get logs
+        logs_data = await environment_service.get_environment_logs(
+            environment_id, 
+            str(current_user.id),
+            lines=lines,
+            since_timestamp=since_timestamp
+        )
+
+        return logs_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Environment logs retrieval error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve environment logs",
+        )

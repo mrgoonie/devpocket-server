@@ -12,7 +12,7 @@ from app.core.database import connect_to_mongo, close_mongo_connection
 from app.core.logging import configure_logging
 from app.core.security import SecurityHeaders
 from app.middleware.rate_limiting import RateLimitMiddleware
-from app.api import auth, environments, websocket, clusters
+from app.api import auth, environments, websocket, clusters, templates
 
 # Configure logging
 logger = configure_logging()
@@ -134,6 +134,12 @@ app.include_router(
     clusters.router,
     prefix="/api/v1/clusters",
     tags=["Clusters"],
+)
+
+app.include_router(
+    templates.router,
+    prefix="/api/v1/templates",
+    tags=["Templates"],
 )
 
 

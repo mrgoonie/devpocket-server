@@ -306,6 +306,209 @@ class EnvironmentService:
             logger.error(f"Error stopping environment: {e}")
             return False
 
+    async def restart_environment(self, env_id: str, user_id: str) -> bool:
+        """Restart an environment"""
+        try:
+            environment = await self.get_environment(env_id, user_id)
+            if not environment:
+                return False
+
+            if environment.status not in [EnvironmentStatus.RUNNING, EnvironmentStatus.STOPPED, EnvironmentStatus.ERROR]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Environment cannot be restarted in current state",
+                )
+
+            # Update status to creating (restarting)
+            await self.db.environments.update_one(
+                {"_id": env_id}, 
+                {
+                    "$set": {
+                        "status": EnvironmentStatus.CREATING.value,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            # Restart the container/pod (async)
+            asyncio.create_task(self._restart_container(environment))
+
+            logger.info(f"Environment restart initiated: {environment.name}")
+            return True
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error restarting environment: {e}")
+            return False
+
+    async def _restart_container(self, environment: EnvironmentInDB):
+        """Restart the actual container/pod (simulated)"""
+        try:
+            # Simulate restart time
+            await asyncio.sleep(10)
+
+            # In a real implementation, this would:
+            # 1. Delete existing Kubernetes pod
+            # 2. Wait for termination
+            # 3. Create new pod with same configuration
+            # 4. Wait for pod to be ready
+            # 5. Update service endpoints if needed
+
+            # Update status to running
+            await self.db.environments.update_one(
+                {"_id": environment.id},
+                {
+                    "$set": {
+                        "status": EnvironmentStatus.RUNNING.value,
+                        "updated_at": datetime.utcnow(),
+                        "last_accessed": datetime.utcnow()
+                    }
+                }
+            )
+
+            logger.info(f"Environment restarted successfully: {environment.name}")
+
+        except Exception as e:
+            logger.error(f"Error restarting container for environment {environment.id}: {e}")
+            
+            # Set status to error on restart failure
+            await self.db.environments.update_one(
+                {"_id": environment.id},
+                {
+                    "$set": {
+                        "status": EnvironmentStatus.ERROR.value,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+    async def get_environment_logs(
+        self, 
+        env_id: str, 
+        user_id: str, 
+        lines: int = 100,
+        since_timestamp: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Get environment logs"""
+        try:
+            environment = await self.get_environment(env_id, user_id)
+            if not environment:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Environment not found",
+                )
+
+            # In a real implementation, this would:
+            # 1. Connect to Kubernetes API
+            # 2. Get pod logs using kubectl logs
+            # 3. Parse and format logs
+            # 4. Return structured log data
+
+            # For now, simulate logs based on environment status
+            from app.models.template import LogEntry
+            logs = await self._generate_simulated_logs(environment, lines, since_timestamp)
+            
+            return {
+                "environment_id": env_id,
+                "environment_name": environment.name,
+                "logs": [log.model_dump() for log in logs],
+                "total_lines": len(logs),
+                "has_more": len(logs) >= lines
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting environment logs: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not retrieve logs"
+            )
+
+    async def _generate_simulated_logs(
+        self, 
+        environment: EnvironmentInDB, 
+        lines: int,
+        since_timestamp: Optional[datetime] = None
+    ) -> List:
+        """Generate simulated logs for demonstration"""
+        from app.models.template import LogEntry
+        import random
+        
+        # Base timestamp
+        base_time = since_timestamp or datetime.utcnow()
+        
+        logs = []
+        
+        # Add some realistic log entries based on template
+        template_logs = {
+            EnvironmentTemplate.PYTHON: [
+                "Starting Python application server",
+                "Installing dependencies from requirements.txt",
+                "Flask application started on port 8080",
+                "DEBUG: Application initialized successfully",
+                "INFO: Listening for connections on 0.0.0.0:8080"
+            ],
+            EnvironmentTemplate.NODEJS: [
+                "npm install completed successfully",
+                "Starting Node.js application",
+                "Express server started on port 3000",
+                "INFO: Application ready to accept connections",
+                "DEBUG: Environment variables loaded"
+            ],
+            EnvironmentTemplate.GOLANG: [
+                "Building Go application",
+                "go mod download completed",
+                "Starting HTTP server on :8080",
+                "INFO: Application compiled successfully",
+                "DEBUG: Server listening on port 8080"
+            ],
+            EnvironmentTemplate.UBUNTU: [
+                "Container started successfully",
+                "Installing development tools",
+                "apt-get update completed",
+                "System ready for development",
+                "INFO: Environment setup completed"
+            ]
+        }
+        
+        template_specific_logs = template_logs.get(environment.template, template_logs[EnvironmentTemplate.UBUNTU])
+        
+        # Add status-specific logs
+        if environment.status == EnvironmentStatus.CREATING:
+            template_specific_logs.extend([
+                "Initializing environment...",
+                "Setting up workspace",
+                "Configuring environment variables"
+            ])
+        elif environment.status == EnvironmentStatus.RUNNING:
+            template_specific_logs.extend([
+                "Application is running normally",
+                "Health check passed",
+                "Ready to accept requests"
+            ])
+        elif environment.status == EnvironmentStatus.ERROR:
+            template_specific_logs.extend([
+                "ERROR: Application failed to start",
+                "ERROR: Port binding failed",
+                "ERROR: Check configuration and retry"
+            ])
+        
+        # Generate log entries
+        for i in range(min(lines, len(template_specific_logs))):
+            timestamp = base_time.replace(second=base_time.second + i)
+            level = random.choice(["INFO", "DEBUG", "WARNING", "ERROR"]) if i % 5 == 0 else "INFO"
+            
+            logs.append(LogEntry(
+                timestamp=timestamp,
+                level=level,
+                message=template_specific_logs[i % len(template_specific_logs)],
+                source="container"
+            ))
+        
+        return logs[-lines:]  # Return last N lines
+
     async def create_websocket_session(
         self, user_id: str, env_id: str, connection_id: str
     ) -> WebSocketSession:

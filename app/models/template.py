@@ -1,0 +1,92 @@
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, List
+from datetime import datetime
+from enum import Enum
+
+
+class TemplateCategory(str, Enum):
+    PROGRAMMING_LANGUAGE = "programming_language"
+    FRAMEWORK = "framework"
+    DATABASE = "database"
+    DEVOPS = "devops"
+    OPERATING_SYSTEM = "operating_system"
+
+
+class TemplateStatus(str, Enum):
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+    BETA = "beta"
+
+
+class TemplateBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    display_name: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(..., min_length=1, max_length=500)
+    category: TemplateCategory
+    tags: List[str] = []
+    docker_image: str = Field(..., description="Docker image for the template")
+    default_port: Optional[int] = 8080
+    default_resources: Dict[str, str] = {
+        "cpu": "500m",
+        "memory": "1Gi", 
+        "storage": "10Gi"
+    }
+    environment_variables: Dict[str, str] = {}
+    startup_commands: List[str] = []
+    documentation_url: Optional[str] = None
+    icon_url: Optional[str] = None
+
+
+class TemplateCreate(TemplateBase):
+    pass
+
+
+class TemplateUpdate(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    docker_image: Optional[str] = None
+    default_port: Optional[int] = None
+    default_resources: Optional[Dict[str, str]] = None
+    environment_variables: Optional[Dict[str, str]] = None
+    startup_commands: Optional[List[str]] = None
+    documentation_url: Optional[str] = None
+    icon_url: Optional[str] = None
+    status: Optional[TemplateStatus] = None
+
+
+class TemplateInDB(TemplateBase):
+    id: str = Field(alias="_id")
+    status: TemplateStatus = TemplateStatus.ACTIVE
+    version: str = "1.0.0"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by: str = "system"
+    usage_count: int = 0
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+
+
+class TemplateResponse(TemplateBase):
+    id: str
+    status: TemplateStatus
+    version: str
+    created_at: datetime
+    updated_at: datetime
+    usage_count: int
+
+
+class LogEntry(BaseModel):
+    timestamp: datetime
+    level: str  # INFO, ERROR, WARNING, DEBUG
+    message: str
+    source: Optional[str] = None  # container, system, application
+
+
+class EnvironmentLogs(BaseModel):
+    environment_id: str
+    logs: List[LogEntry]
+    total_lines: int
+    has_more: bool = False
