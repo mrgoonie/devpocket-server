@@ -195,19 +195,35 @@ class TemplateService:
         
         # Check if we have templates in database
         count = await self.db.templates.count_documents({})
+        logger.info(f"Total templates in database: {count}")
+        
         if count == 0:
             # Initialize default templates
             await self.initialize_default_templates()
+            # Re-count after initialization
+            count = await self.db.templates.count_documents({})
+            logger.info(f"Templates after initialization: {count}")
         
         # Get templates from database
         cursor = self.db.templates.find(query).sort("created_at", 1)
         templates = []
         
         async for template_data in cursor:
-            template_dict = dict(template_data)
-            template_dict["id"] = str(template_dict.pop("_id"))
-            templates.append(TemplateResponse(**template_dict))
+            try:
+                template_dict = dict(template_data)
+                template_dict["id"] = str(template_dict.pop("_id"))
+                templates.append(TemplateResponse(**template_dict))
+            except Exception as e:
+                logger.error(
+                    f"Error converting template to response",
+                    template_name=template_data.get("name", "unknown"),
+                    template_id=str(template_data.get("_id", "unknown")),
+                    error=str(e),
+                    template_data=template_data
+                )
+                # Continue processing other templates instead of failing completely
         
+        logger.info(f"Successfully converted {len(templates)} templates out of {count} total")
         return templates
     
     async def get_template_by_id(self, template_id: str) -> Optional[TemplateInDB]:

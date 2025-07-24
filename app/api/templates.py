@@ -104,15 +104,28 @@ async def list_templates(
         )
         
         # Filter out deprecated templates for non-admin users
-        if current_user.subscription_plan != "admin":
+        initial_count = len(templates)
+        if current_user.subscription_plan not in ["pro", "admin"]:
             templates = [t for t in templates if t.status != TemplateStatus.DEPRECATED]
+            logger.info(
+                f"Filtered templates for non-admin user",
+                user_subscription=current_user.subscription_plan,
+                initial_count=initial_count,
+                filtered_count=len(templates),
+                user_id=str(current_user.id)
+            )
         
+        # Log detailed information about templates and filtering
+        template_statuses = [t.status.value for t in templates]
         logger.info(
-            f"Templates listed",
+            f"Templates listed - detailed info",
             user_id=str(current_user.id),
-            count=len(templates),
+            user_subscription=current_user.subscription_plan,
+            final_count=len(templates),
             category=category,
-            status=status_filter
+            status_filter=status_filter,
+            template_names=[t.name for t in templates],
+            template_statuses=template_statuses
         )
         
         return templates
@@ -193,7 +206,7 @@ async def get_template(
         
         # Check if user can access deprecated templates
         if (template.status == TemplateStatus.DEPRECATED and 
-            current_user.subscription_plan != "admin"):
+            current_user.subscription_plan not in ["pro", "admin"]):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Template not found"
