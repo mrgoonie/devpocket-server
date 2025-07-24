@@ -5,8 +5,9 @@ import structlog
 
 from app.core.database import get_database
 from app.services.auth_service import auth_service
-from app.models.user import UserCreate, UserLogin, UserResponse, Token
+from app.models.user import UserCreate, UserLogin, UserResponse, Token, RefreshTokenRequest, EmailVerificationRequest
 from app.middleware.auth import get_current_user
+from app.core.security import verify_token
 from app.core.logging import audit_log
 
 logger = structlog.get_logger(__name__)
@@ -24,6 +25,12 @@ async def register(user_data: UserCreate, db=Depends(get_database)):
 
         # Create user
         user = await auth_service.create_user(user_data)
+        
+        # Generate email verification token
+        verification_token = await auth_service.generate_email_verification_token(str(user.id))
+        
+        # TODO: Send verification email with token
+        # In production, integrate with email service (SendGrid, AWS SES, etc.)
 
         # Audit log
         audit_log(
@@ -170,34 +177,119 @@ async def logout(current_user=Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
         )
 
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    token_data: RefreshTokenRequest,
+    db=Depends(get_database)
+):
+    """Refresh access token using refresh token"""
+    try:
+        auth_service.set_database(db)
+        tokens = await auth_service.refresh_tokens(token_data.refresh_token)
+        
+        # Audit log
+        payload = verify_token(token_data.refresh_token)
+        if payload:
+            audit_log(
+                action="token_refreshed",
+                user_id=payload.get("sub", "unknown"),
+                details={"refresh_token_used": True},
+            )
+        
+        logger.info("Access token refreshed successfully")
+        return tokens
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed",
+        )
+
 
 @router.post("/verify-email")
 async def verify_email(
-    current_user=Depends(get_current_user), db=Depends(get_database)
+    verification_data: EmailVerificationRequest,
+    db=Depends(get_database)
 ):
-    """Verify user email (simplified - in real app would need email verification flow)"""
+    """Verify user email with verification token"""
     try:
-        if current_user.is_verified:
-            return {"message": "Email already verified"}
+        auth_service.set_database(db)
+        
+        # Verify the email token
+        success = await auth_service.verify_email_token(verification_data.token)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token",
+            )
 
-        # Update user verification status
-        await db.users.update_one(
-            {"_id": current_user.id}, {"$set": {"is_verified": True}}
-        )
-
+        # Find the user to get details for audit log
+        user = await db.users.find_one({
+            "is_verified": True,
+            "email_verification_token": None
+        }, sort=[("_id", -1)])  # Get most recently verified user
+        
         # Audit log
-        audit_log(
-            action="email_verified",
-            user_id=str(current_user.id),
-            details={"email": current_user.email},
-        )
+        if user:
+            audit_log(
+                action="email_verified",
+                user_id=str(user["_id"]),
+                details={"email": user["email"]},
+            )
 
-        logger.info(f"Email verified for user: {current_user.username}")
+        logger.info("Email verified successfully")
         return {"message": "Email verified successfully"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Email verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Email verification failed",
+        )
+
+@router.post("/resend-verification")
+async def resend_verification_email(
+    current_user=Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """Resend email verification token"""
+    try:
+        if current_user.is_verified:
+            return {"message": "Email already verified"}
+
+        auth_service.set_database(db)
+        
+        # Generate new verification token
+        token = await auth_service.generate_email_verification_token(str(current_user.id))
+        
+        # In a real application, you would send this token via email
+        # For now, we'll return it in the response (for testing purposes)
+        # TODO: Integrate with email service (SendGrid, AWS SES, etc.)
+        
+        # Audit log
+        audit_log(
+            action="verification_email_resent",
+            user_id=str(current_user.id),
+            details={"email": current_user.email},
+        )
+
+        logger.info(f"Verification email resent for user: {current_user.username}")
+        return {
+            "message": "Verification email sent",
+            "token": token  # Remove this in production
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not resend verification email",
         )

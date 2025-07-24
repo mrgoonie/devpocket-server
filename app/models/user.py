@@ -80,6 +80,8 @@ class UserInDB(UserBase):
     last_login: Optional[datetime] = None
     failed_login_attempts: int = 0
     locked_until: Optional[datetime] = None
+    email_verification_token: Optional[str] = None
+    email_verification_expires: Optional[datetime] = None
 
     class Config:
         populate_by_name = True
@@ -106,6 +108,12 @@ class Token(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class EmailVerificationRequest(BaseModel):
+    token: str
 
 
 class TokenData(BaseModel):

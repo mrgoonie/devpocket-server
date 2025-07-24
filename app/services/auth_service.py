@@ -12,6 +12,7 @@ from app.core.security import (
     verify_password,
     create_access_token,
     create_refresh_token,
+    verify_token,
 )
 from app.core.database import get_database
 from app.models.user import UserCreate, UserInDB, UserLogin, Token, GoogleUserInfo
@@ -177,6 +178,20 @@ class AuthService:
         except Exception as e:
             logger.error(f"Error handling failed login: {e}")
 
+    async def get_user_by_id(self, user_id: str) -> Optional[UserInDB]:
+        """Get user by ID"""
+        try:
+            user_doc = await self.db.users.find_one({"_id": ObjectId(user_id)})
+            if not user_doc:
+                return None
+            
+            user_doc = self._convert_objectid_to_string(user_doc)
+            return UserInDB(**user_doc)
+            
+        except Exception as e:
+            logger.error(f"Error getting user by ID: {e}")
+            return None
+
     async def create_tokens(self, user: UserInDB) -> Token:
         """Create access and refresh tokens for user"""
         try:
@@ -209,6 +224,114 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Could not create authentication tokens",
             )
+
+    async def refresh_tokens(self, refresh_token: str) -> Token:
+        """Refresh access token using refresh token"""
+        try:
+            # Verify refresh token
+            payload = verify_token(refresh_token)
+            if not payload:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
+
+            # Check if it's actually a refresh token
+            if payload.get("type") != "refresh_token":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type",
+                )
+
+            # Get user from database
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token payload",
+                )
+
+            user = await self.get_user_by_id(user_id)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                )
+
+            # Create new tokens
+            return await self.create_tokens(user)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error refreshing tokens: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not refresh tokens",
+            )
+
+    async def generate_email_verification_token(self, user_id: str) -> str:
+        """Generate email verification token for user"""
+        try:
+            import secrets
+            from datetime import datetime, timedelta
+            
+            # Generate secure random token
+            token = secrets.token_urlsafe(32)
+            expires = datetime.utcnow() + timedelta(hours=24)  # 24 hour expiry
+            
+            # Update user with verification token
+            await self.db.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "email_verification_token": token,
+                        "email_verification_expires": expires,
+                    }
+                }
+            )
+            
+            return token
+            
+        except Exception as e:
+            logger.error(f"Error generating email verification token: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not generate verification token",
+            )
+
+    async def verify_email_token(self, token: str) -> bool:
+        """Verify email verification token and mark user as verified"""
+        try:
+            from datetime import datetime
+            
+            # Find user with this token
+            user = await self.db.users.find_one({
+                "email_verification_token": token,
+                "email_verification_expires": {"$gt": datetime.utcnow()}
+            })
+            
+            if not user:
+                return False
+            
+            # Mark user as verified and clear verification token
+            await self.db.users.update_one(
+                {"_id": user["_id"]},
+                {
+                    "$set": {
+                        "is_verified": True,
+                        "email_verification_token": None,
+                        "email_verification_expires": None,
+                    }
+                }
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error verifying email token: {e}")
+            # Return False instead of raising exception to indicate invalid token
+            return False
 
     async def google_login(self, token: str) -> UserInDB:
         """Authenticate user with Google OAuth token"""
