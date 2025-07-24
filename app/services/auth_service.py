@@ -184,10 +184,10 @@ class AuthService:
             user_doc = await self.db.users.find_one({"_id": ObjectId(user_id)})
             if not user_doc:
                 return None
-            
+
             user_doc = self._convert_objectid_to_string(user_doc)
             return UserInDB(**user_doc)
-            
+
         except Exception as e:
             logger.error(f"Error getting user by ID: {e}")
             return None
@@ -275,11 +275,11 @@ class AuthService:
         try:
             import secrets
             from datetime import datetime, timedelta
-            
+
             # Generate secure random token
             token = secrets.token_urlsafe(32)
             expires = datetime.utcnow() + timedelta(hours=24)  # 24 hour expiry
-            
+
             # Update user with verification token
             await self.db.users.update_one(
                 {"_id": ObjectId(user_id)},
@@ -288,11 +288,11 @@ class AuthService:
                         "email_verification_token": token,
                         "email_verification_expires": expires,
                     }
-                }
+                },
             )
-            
+
             return token
-            
+
         except Exception as e:
             logger.error(f"Error generating email verification token: {e}")
             raise HTTPException(
@@ -304,16 +304,18 @@ class AuthService:
         """Verify email verification token and mark user as verified"""
         try:
             from datetime import datetime
-            
+
             # Find user with this token
-            user = await self.db.users.find_one({
-                "email_verification_token": token,
-                "email_verification_expires": {"$gt": datetime.utcnow()}
-            })
-            
+            user = await self.db.users.find_one(
+                {
+                    "email_verification_token": token,
+                    "email_verification_expires": {"$gt": datetime.utcnow()},
+                }
+            )
+
             if not user:
                 return False
-            
+
             # Mark user as verified and clear verification token
             await self.db.users.update_one(
                 {"_id": user["_id"]},
@@ -323,11 +325,11 @@ class AuthService:
                         "email_verification_token": None,
                         "email_verification_expires": None,
                     }
-                }
+                },
             )
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Error verifying email token: {e}")
             # Return False instead of raising exception to indicate invalid token

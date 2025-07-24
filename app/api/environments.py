@@ -12,7 +12,11 @@ from app.models.environment import (
     EnvironmentMetrics,
 )
 from app.models.user import UserInDB
-from app.models.error_responses import get_error_responses, get_auth_error_responses, get_crud_error_responses
+from app.models.error_responses import (
+    get_error_responses,
+    get_auth_error_responses,
+    get_crud_error_responses,
+)
 from app.middleware.auth import get_current_user, get_current_verified_user
 from app.core.logging import audit_log
 
@@ -22,7 +26,7 @@ router = APIRouter()
 
 @router.post(
     "",
-    response_model=EnvironmentResponse, 
+    response_model=EnvironmentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new environment",
     description="Create a new development environment with specified template and resources",
@@ -39,7 +43,7 @@ router = APIRouter()
                         "resources": {
                             "cpu": "500m",
                             "memory": "1Gi",
-                            "storage": "10Gi"
+                            "storage": "10Gi",
                         },
                         "external_url": None,
                         "web_port": 8080,
@@ -47,14 +51,14 @@ router = APIRouter()
                         "last_accessed": None,
                         "cpu_usage": 0.0,
                         "memory_usage": 0.0,
-                        "storage_usage": 0.0
+                        "storage_usage": 0.0,
                     }
                 }
-            }
+            },
         },
         **get_crud_error_responses(),
-        **get_error_responses(409, 422, 429)
-    }
+        **get_error_responses(409, 422, 429),
+    },
 )
 async def create_environment(
     env_data: EnvironmentCreate,
@@ -159,16 +163,14 @@ async def list_environments(
 
 
 @router.get(
-    "/{environment_id}", 
+    "/{environment_id}",
     response_model=EnvironmentResponse,
     summary="Get environment details",
     description="Get detailed information about a specific environment",
     responses={
-        200: {
-            "description": "Environment details retrieved successfully"
-        },
-        **get_crud_error_responses()
-    }
+        200: {"description": "Environment details retrieved successfully"},
+        **get_crud_error_responses(),
+    },
 )
 async def get_environment(
     environment_id: str,
@@ -222,14 +224,12 @@ async def get_environment(
             "description": "Environment deleted successfully",
             "content": {
                 "application/json": {
-                    "example": {
-                        "message": "Environment deleted successfully"
-                    }
+                    "example": {"message": "Environment deleted successfully"}
                 }
-            }
+            },
         },
-        **get_crud_error_responses()
-    }
+        **get_crud_error_responses(),
+    },
 )
 async def delete_environment(
     environment_id: str,
@@ -277,14 +277,12 @@ async def delete_environment(
             "description": "Environment start initiated successfully",
             "content": {
                 "application/json": {
-                    "example": {
-                        "message": "Environment start initiated successfully"
-                    }
+                    "example": {"message": "Environment start initiated successfully"}
                 }
-            }
+            },
         },
-        **get_crud_error_responses()
-    }
+        **get_crud_error_responses(),
+    },
 )
 async def start_environment(
     environment_id: str,
@@ -333,14 +331,12 @@ async def start_environment(
             "description": "Environment stop initiated successfully",
             "content": {
                 "application/json": {
-                    "example": {
-                        "message": "Environment stop initiated successfully"
-                    }
+                    "example": {"message": "Environment stop initiated successfully"}
                 }
-            }
+            },
         },
-        **get_crud_error_responses()
-    }
+        **get_crud_error_responses(),
+    },
 )
 async def stop_environment(
     environment_id: str,
@@ -435,11 +431,9 @@ async def get_environment_metrics(
             "description": "Environment restart initiated successfully",
             "content": {
                 "application/json": {
-                    "example": {
-                        "message": "Environment restart initiated successfully"
-                    }
+                    "example": {"message": "Environment restart initiated successfully"}
                 }
-            }
+            },
         },
         400: {
             "description": "Bad request - Environment cannot be restarted",
@@ -449,34 +443,34 @@ async def get_environment_metrics(
                         "detail": "Environment cannot be restarted in current state"
                     }
                 }
-            }
+            },
         },
         401: {"description": "Unauthorized - Invalid or missing token"},
         404: {"description": "Environment not found"},
-        500: {"description": "Internal server error"}
-    }
+        500: {"description": "Internal server error"},
+    },
 )
 async def restart_environment(
     environment_id: str = Path(
-        ..., 
+        ...,
         description="The environment ID to restart",
-        example="507f1f77bcf86cd799439011"
+        example="507f1f77bcf86cd799439011",
     ),
     current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database),
 ):
     """
     Restart a development environment.
-    
+
     **Process:**
     1. Environment status changes to 'creating' (restarting)
     2. Container/pod is recreated with same configuration
     3. Status returns to 'running' when ready
-    
+
     **Requirements:**
     - Environment must be in 'running', 'stopped', or 'error' state
     - User must own the environment
-    
+
     **Note:** Restart typically takes 10-30 seconds
     """
     try:
@@ -528,20 +522,20 @@ async def restart_environment(
                                 "timestamp": "2024-01-01T12:00:00Z",
                                 "level": "INFO",
                                 "message": "Starting Python application server",
-                                "source": "container"
+                                "source": "container",
                             },
                             {
                                 "timestamp": "2024-01-01T12:00:01Z",
                                 "level": "INFO",
                                 "message": "Flask application started on port 8080",
-                                "source": "container"
-                            }
+                                "source": "container",
+                            },
                         ],
                         "total_lines": 2,
-                        "has_more": False
+                        "has_more": False,
                     }
                 }
-            }
+            },
         },
         400: {
             "description": "Bad request - Invalid timestamp format",
@@ -551,49 +545,45 @@ async def restart_environment(
                         "detail": "Invalid timestamp format. Use ISO format (e.g., 2024-01-01T12:00:00Z)"
                     }
                 }
-            }
+            },
         },
         401: {"description": "Unauthorized - Invalid or missing token"},
         404: {"description": "Environment not found"},
-        500: {"description": "Internal server error"}
-    }
+        500: {"description": "Internal server error"},
+    },
 )
 async def get_environment_logs(
     environment_id: str = Path(
-        ..., 
+        ...,
         description="The environment ID to get logs from",
-        example="507f1f77bcf86cd799439011"
+        example="507f1f77bcf86cd799439011",
     ),
     current_user: UserInDB = Depends(get_current_user),
     lines: int = Query(
-        100, 
-        description="Number of log lines to retrieve",
-        ge=1,
-        le=1000,
-        example=100
+        100, description="Number of log lines to retrieve", ge=1, le=1000, example=100
     ),
     since: Optional[str] = Query(
         None,
         description="Get logs since timestamp (ISO 8601 format)",
-        example="2024-01-01T12:00:00Z"
+        example="2024-01-01T12:00:00Z",
     ),
     db=Depends(get_database),
 ):
     """
     Get logs from a development environment.
-    
+
     **Features:**
     - Retrieve last N lines of logs (up to 1000)
     - Filter logs by timestamp
     - Logs include level (INFO, DEBUG, WARNING, ERROR)
     - Real-time log streaming available via WebSocket endpoint
-    
+
     **Log Levels:**
     - `INFO`: General information messages
     - `DEBUG`: Detailed debugging information
     - `WARNING`: Warning messages
     - `ERROR`: Error messages
-    
+
     **Note:** In production, logs are retrieved from Kubernetes pod logs
     """
     try:
@@ -604,19 +594,20 @@ async def get_environment_logs(
         if since:
             try:
                 from datetime import datetime
-                since_timestamp = datetime.fromisoformat(since.replace('Z', '+00:00'))
+
+                since_timestamp = datetime.fromisoformat(since.replace("Z", "+00:00"))
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid timestamp format. Use ISO format (e.g., 2024-01-01T12:00:00Z)"
+                    detail="Invalid timestamp format. Use ISO format (e.g., 2024-01-01T12:00:00Z)",
                 )
 
         # Get logs
         logs_data = await environment_service.get_environment_logs(
-            environment_id, 
+            environment_id,
             str(current_user.id),
             lines=lines,
-            since_timestamp=since_timestamp
+            since_timestamp=since_timestamp,
         )
 
         return logs_data

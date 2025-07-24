@@ -87,8 +87,12 @@ async def create_indexes():
         await db.database.templates.create_index("created_at")
 
         # Environment metrics collection indexes (for logs and metrics)
-        await db.database.environment_metrics.create_index([("environment_id", 1), ("timestamp", -1)])
-        await db.database.environment_metrics.create_index("timestamp", expireAfterSeconds=604800)  # 7 days TTL
+        await db.database.environment_metrics.create_index(
+            [("environment_id", 1), ("timestamp", -1)]
+        )
+        await db.database.environment_metrics.create_index(
+            "timestamp", expireAfterSeconds=604800
+        )  # 7 days TTL
 
         logger.info("Database indexes created successfully")
 

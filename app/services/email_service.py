@@ -15,16 +15,20 @@ class EmailService:
             self.enabled = False
             logger.warning("Resend API key not configured - email sending disabled")
 
-    async def send_verification_email(self, to_email: str, username: str, verification_token: str) -> bool:
+    async def send_verification_email(
+        self, to_email: str, username: str, verification_token: str
+    ) -> bool:
         """Send email verification email"""
         if not self.enabled:
-            logger.warning(f"Cannot send verification email to {to_email} - email service disabled")
+            logger.warning(
+                f"Cannot send verification email to {to_email} - email service disabled"
+            )
             return False
 
         try:
             # In a real app, you'd have proper HTML templates
             verification_url = f"{settings.ALLOWED_ORIGINS[0] if settings.ALLOWED_ORIGINS else 'http://localhost:3000'}/verify-email?token={verification_token}"
-            
+
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2>Welcome to DevPocket!</h2>
@@ -57,33 +61,39 @@ class EmailService:
             The DevPocket Team
             """
 
-            response = resend.emails.send({
-                "from": settings.EMAIL_FROM,
-                "to": [to_email],
-                "subject": "Verify your DevPocket account",
-                "html": html_content,
-                "text": text_content,
-            })
+            response = resend.emails.send(
+                {
+                    "from": settings.EMAIL_FROM,
+                    "to": [to_email],
+                    "subject": "Verify your DevPocket account",
+                    "html": html_content,
+                    "text": text_content,
+                }
+            )
 
-            logger.info(f"Verification email sent successfully to {to_email}", extra={
-                "email_id": response.get("id"),
-                "recipient": to_email
-            })
+            logger.info(
+                f"Verification email sent successfully to {to_email}",
+                extra={"email_id": response.get("id"), "recipient": to_email},
+            )
             return True
 
         except Exception as e:
             logger.error(f"Failed to send verification email to {to_email}: {str(e)}")
             return False
 
-    async def send_password_reset_email(self, to_email: str, username: str, reset_token: str) -> bool:
+    async def send_password_reset_email(
+        self, to_email: str, username: str, reset_token: str
+    ) -> bool:
         """Send password reset email"""
         if not self.enabled:
-            logger.warning(f"Cannot send password reset email to {to_email} - email service disabled")
+            logger.warning(
+                f"Cannot send password reset email to {to_email} - email service disabled"
+            )
             return False
 
         try:
             reset_url = f"{settings.ALLOWED_ORIGINS[0] if settings.ALLOWED_ORIGINS else 'http://localhost:3000'}/reset-password?token={reset_token}"
-            
+
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2>Password Reset Request</h2>
@@ -122,18 +132,20 @@ class EmailService:
             The DevPocket Team
             """
 
-            response = resend.emails.send({
-                "from": settings.EMAIL_FROM,
-                "to": [to_email],
-                "subject": "Reset your DevPocket password",
-                "html": html_content,
-                "text": text_content,
-            })
+            response = resend.emails.send(
+                {
+                    "from": settings.EMAIL_FROM,
+                    "to": [to_email],
+                    "subject": "Reset your DevPocket password",
+                    "html": html_content,
+                    "text": text_content,
+                }
+            )
 
-            logger.info(f"Password reset email sent successfully to {to_email}", extra={
-                "email_id": response.get("id"),
-                "recipient": to_email
-            })
+            logger.info(
+                f"Password reset email sent successfully to {to_email}",
+                extra={"email_id": response.get("id"), "recipient": to_email},
+            )
             return True
 
         except Exception as e:
@@ -143,12 +155,14 @@ class EmailService:
     async def send_welcome_email(self, to_email: str, username: str) -> bool:
         """Send welcome email after successful verification"""
         if not self.enabled:
-            logger.warning(f"Cannot send welcome email to {to_email} - email service disabled")
+            logger.warning(
+                f"Cannot send welcome email to {to_email} - email service disabled"
+            )
             return False
 
         try:
             dashboard_url = f"{settings.ALLOWED_ORIGINS[0] if settings.ALLOWED_ORIGINS else 'http://localhost:3000'}/dashboard"
-            
+
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2>Welcome to DevPocket! 🎉</h2>
@@ -196,18 +210,20 @@ class EmailService:
             The DevPocket Team
             """
 
-            response = resend.emails.send({
-                "from": settings.EMAIL_FROM,
-                "to": [to_email],
-                "subject": "Welcome to DevPocket! Your account is ready 🎉",
-                "html": html_content,
-                "text": text_content,
-            })
+            response = resend.emails.send(
+                {
+                    "from": settings.EMAIL_FROM,
+                    "to": [to_email],
+                    "subject": "Welcome to DevPocket! Your account is ready 🎉",
+                    "html": html_content,
+                    "text": text_content,
+                }
+            )
 
-            logger.info(f"Welcome email sent successfully to {to_email}", extra={
-                "email_id": response.get("id"),
-                "recipient": to_email
-            })
+            logger.info(
+                f"Welcome email sent successfully to {to_email}",
+                extra={"email_id": response.get("id"), "recipient": to_email},
+            )
             return True
 
         except Exception as e:

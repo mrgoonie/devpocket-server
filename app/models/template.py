@@ -28,8 +28,8 @@ class TemplateBase(BaseModel):
     default_port: Optional[int] = 8080
     default_resources: Dict[str, str] = {
         "cpu": "500m",
-        "memory": "1Gi", 
-        "storage": "10Gi"
+        "memory": "1Gi",
+        "storage": "10Gi",
     }
     environment_variables: Dict[str, str] = {}
     startup_commands: List[str] = []
@@ -51,18 +51,18 @@ class TemplateCreate(TemplateBase):
                 "default_resources": {
                     "cpu": "1000m",
                     "memory": "2Gi",
-                    "storage": "15Gi"
+                    "storage": "15Gi",
                 },
                 "environment_variables": {
                     "JAVA_HOME": "/usr/local/openjdk-17",
-                    "MAVEN_HOME": "/usr/share/maven"
+                    "MAVEN_HOME": "/usr/share/maven",
                 },
                 "startup_commands": [
                     "apt-get update && apt-get install -y maven gradle",
-                    "mkdir -p /workspace"
+                    "mkdir -p /workspace",
                 ],
                 "documentation_url": "https://docs.oracle.com/en/java/",
-                "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg"
+                "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg",
             }
         }
 
@@ -79,7 +79,7 @@ class TemplateUpdate(BaseModel):
     documentation_url: Optional[str] = None
     icon_url: Optional[str] = None
     status: Optional[TemplateStatus] = None
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -87,9 +87,9 @@ class TemplateUpdate(BaseModel):
                 "tags": ["java", "spring-boot", "microservices"],
                 "environment_variables": {
                     "JAVA_HOME": "/usr/local/openjdk-17",
-                    "SPRING_PROFILES_ACTIVE": "dev"
+                    "SPRING_PROFILES_ACTIVE": "dev",
                 },
-                "status": "active"
+                "status": "active",
             }
         }
 

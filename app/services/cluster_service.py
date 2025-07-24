@@ -231,10 +231,13 @@ class ClusterService:
             raise ValueError("Database not initialized")
 
         from bson import ObjectId
+
         try:
             # Try to convert to ObjectId if it's a string
             if isinstance(cluster_id, str):
-                cluster_data = await self.db.clusters.find_one({"_id": ObjectId(cluster_id)})
+                cluster_data = await self.db.clusters.find_one(
+                    {"_id": ObjectId(cluster_id)}
+                )
             else:
                 cluster_data = await self.db.clusters.find_one({"_id": cluster_id})
         except Exception:
