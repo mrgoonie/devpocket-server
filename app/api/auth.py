@@ -5,6 +5,7 @@ import structlog
 
 from app.core.database import get_database
 from app.services.auth_service import auth_service
+from app.services.email_service import email_service
 from app.models.user import UserCreate, UserLogin, UserResponse, Token, RefreshTokenRequest, EmailVerificationRequest
 from app.middleware.auth import get_current_user
 from app.core.security import verify_token
@@ -29,8 +30,12 @@ async def register(user_data: UserCreate, db=Depends(get_database)):
         # Generate email verification token
         verification_token = await auth_service.generate_email_verification_token(str(user.id))
         
-        # TODO: Send verification email with token
-        # In production, integrate with email service (SendGrid, AWS SES, etc.)
+        # Send verification email
+        await email_service.send_verification_email(
+            to_email=user.email,
+            username=user.username,
+            verification_token=verification_token
+        )
 
         # Audit log
         audit_log(
@@ -233,8 +238,15 @@ async def verify_email(
             "email_verification_token": None
         }, sort=[("_id", -1)])  # Get most recently verified user
         
-        # Audit log
+        # Send welcome email and audit log
         if user:
+            # Send welcome email
+            await email_service.send_welcome_email(
+                to_email=user["email"],
+                username=user["username"]
+            )
+            
+            # Audit log
             audit_log(
                 action="email_verified",
                 user_id=str(user["_id"]),
@@ -268,9 +280,12 @@ async def resend_verification_email(
         # Generate new verification token
         token = await auth_service.generate_email_verification_token(str(current_user.id))
         
-        # In a real application, you would send this token via email
-        # For now, we'll return it in the response (for testing purposes)
-        # TODO: Integrate with email service (SendGrid, AWS SES, etc.)
+        # Send verification email
+        email_sent = await email_service.send_verification_email(
+            to_email=current_user.email,
+            username=current_user.username,
+            verification_token=token
+        )
         
         # Audit log
         audit_log(
@@ -280,10 +295,11 @@ async def resend_verification_email(
         )
 
         logger.info(f"Verification email resent for user: {current_user.username}")
-        return {
-            "message": "Verification email sent",
-            "token": token  # Remove this in production
-        }
+        
+        if email_sent:
+            return {"message": "Verification email sent successfully"}
+        else:
+            return {"message": "Verification email queued (email service unavailable)"}
 
     except HTTPException:
         raise

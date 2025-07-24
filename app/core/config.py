@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Redis settings
     REDIS_URL: str = "redis://localhost:6379"
 
+    # Email settings
+    RESEND_API_KEY: Optional[str] = None
+    EMAIL_FROM: str = "noreply@devpocket.sh"
+
     # Logging settings
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"
