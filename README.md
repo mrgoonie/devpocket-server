@@ -4,6 +4,8 @@
 
 DevPocket Server is a production-ready Python FastAPI backend that powers the DevPocket mobile-first cloud IDE. It provides secure, scalable development environments accessible from any mobile device.
 
+- **DevPocker Mobile App**: https://github.com/mrgoonie/devpocket-app
+
 ## ✨ Features
 
 ### 🔐 Authentication & Security
@@ -193,8 +195,8 @@ POST /api/v1/auth/logout
 ### Environment Management
 
 ```http
-GET    /api/v1/environments/
-POST   /api/v1/environments/
+GET    /api/v1/environments
+POST   /api/v1/environments
 GET    /api/v1/environments/{id}
 DELETE /api/v1/environments/{id}
 POST   /api/v1/environments/{id}/start
@@ -238,7 +240,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 #### Create Environment
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/environments/ \
+curl -X POST http://localhost:8000/api/v1/environments \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{

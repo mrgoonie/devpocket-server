@@ -8,7 +8,7 @@ class TestEnvironmentEndpoints:
     async def test_create_environment(self, client: AsyncClient, authenticated_user, sample_environment_data):
         """Test creating a new environment."""
         response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -26,7 +26,7 @@ class TestEnvironmentEndpoints:
     
     async def test_create_environment_unauthorized(self, client: AsyncClient, sample_environment_data):
         """Test creating environment without authentication."""
-        response = await client.post("/api/v1/environments/", json=sample_environment_data)
+        response = await client.post("/api/v1/environments", json=sample_environment_data)
         
         assert response.status_code == 401
     
@@ -39,7 +39,7 @@ class TestEnvironmentEndpoints:
         }
         
         response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=invalid_data,
             headers=authenticated_user["headers"]
         )
@@ -50,13 +50,13 @@ class TestEnvironmentEndpoints:
         """Test listing user environments."""
         # Create an environment first
         await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
         
         # List environments
-        response = await client.get("/api/v1/environments/", headers=authenticated_user["headers"])
+        response = await client.get("/api/v1/environments", headers=authenticated_user["headers"])
         
         assert response.status_code == 200
         data = response.json()
@@ -67,7 +67,7 @@ class TestEnvironmentEndpoints:
     
     async def test_list_environments_unauthorized(self, client: AsyncClient):
         """Test listing environments without authentication."""
-        response = await client.get("/api/v1/environments/")
+        response = await client.get("/api/v1/environments")
         
         assert response.status_code == 401
     
@@ -75,7 +75,7 @@ class TestEnvironmentEndpoints:
         """Test getting a specific environment."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -101,7 +101,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment without proper authentication."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -116,7 +116,7 @@ class TestEnvironmentEndpoints:
         """Test deleting an environment."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -135,7 +135,7 @@ class TestEnvironmentEndpoints:
         """Test starting an environment."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -153,7 +153,7 @@ class TestEnvironmentEndpoints:
         """Test stopping an environment."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -171,7 +171,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment metrics."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -191,7 +191,7 @@ class TestEnvironmentEndpoints:
         """Test restarting an environment."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -223,7 +223,7 @@ class TestEnvironmentEndpoints:
         """Test restarting an environment in invalid state."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -259,7 +259,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment logs."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -293,7 +293,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment logs with custom line count."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -315,7 +315,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment logs with timestamp filter."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -344,7 +344,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment logs with invalid timestamp."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )
@@ -364,7 +364,7 @@ class TestEnvironmentEndpoints:
         """Test getting environment logs with invalid line count."""
         # Create an environment first
         create_response = await client.post(
-            "/api/v1/environments/",
+            "/api/v1/environments",
             json=sample_environment_data,
             headers=authenticated_user["headers"]
         )

@@ -30,7 +30,7 @@ async def list_templates(
     print(f"[CRITICAL DEBUG] Templates endpoint called!")
     logger.info(
         "=== TEMPLATES ENDPOINT CALLED ===",
-        endpoint="/api/v1/templates/",
+        endpoint="/api/v1/templates",
         method="GET",
         user_id=str(current_user.id) if current_user else "No user",
         category=category,

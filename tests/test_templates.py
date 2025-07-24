@@ -10,14 +10,14 @@ class TestTemplateEndpoints:
     @pytest.mark.asyncio
     async def test_list_templates_unauthenticated(self, client: AsyncClient):
         """Test listing templates without authentication should fail."""
-        response = await client.get("/api/v1/templates/")
+        response = await client.get("/api/v1/templates")
         assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_list_templates_authenticated(self, client: AsyncClient, authenticated_user):
         """Test listing templates with authentication."""
         response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             headers=authenticated_user["headers"]
         )
         assert response.status_code == 200
@@ -41,7 +41,7 @@ class TestTemplateEndpoints:
     async def test_list_templates_with_category_filter(self, client: AsyncClient, authenticated_user):
         """Test listing templates with category filter."""
         response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             params={"category": "programming_language"},
             headers=authenticated_user["headers"]
         )
@@ -54,7 +54,7 @@ class TestTemplateEndpoints:
     async def test_list_templates_with_status_filter(self, client: AsyncClient, authenticated_user):
         """Test listing templates with status filter."""
         response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             params={"status": "active"},
             headers=authenticated_user["headers"]
         )
@@ -68,7 +68,7 @@ class TestTemplateEndpoints:
         """Test getting a specific template by ID."""
         # First list templates to get an ID
         list_response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             headers=authenticated_user["headers"]
         )
         templates = list_response.json()
@@ -118,7 +118,7 @@ class TestTemplateEndpoints:
         }
         
         response = await client.post(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             json=template_data,
             headers=authenticated_user["headers"]
         )
@@ -150,7 +150,7 @@ class TestTemplateEndpoints:
         }
         
         response = await client.post(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             json=template_data,
             headers=admin_user["headers"]
         )
@@ -176,7 +176,7 @@ class TestTemplateEndpoints:
         }
         
         response = await client.post(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             json=template_data,
             headers=admin_user["headers"]
         )
@@ -187,7 +187,7 @@ class TestTemplateEndpoints:
         """Test that updating templates requires admin access."""
         # Get a template ID first
         list_response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             headers=authenticated_user["headers"]
         )
         templates = list_response.json()
@@ -209,7 +209,7 @@ class TestTemplateEndpoints:
         """Test that admin can update templates."""
         # Get a template ID first
         list_response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             headers=admin_user["headers"]
         )
         templates = list_response.json()
@@ -238,7 +238,7 @@ class TestTemplateEndpoints:
         """Test that deleting templates requires admin access."""
         # Get a template ID first
         list_response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             headers=authenticated_user["headers"]
         )
         templates = list_response.json()
@@ -264,7 +264,7 @@ class TestTemplateEndpoints:
         }
         
         create_response = await client.post(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             json=create_data,
             headers=admin_user["headers"]
         )
@@ -308,7 +308,7 @@ class TestTemplateEndpoints:
         
         # Verify default templates exist
         list_response = await client.get(
-            "/api/v1/templates/",
+            "/api/v1/templates",
             headers=admin_user["headers"]
         )
         templates = list_response.json()
