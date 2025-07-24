@@ -72,7 +72,7 @@ async def list_templates(
     status_filter: Optional[TemplateStatus] = Query(
         None, 
         alias="status", 
-        description="Filter templates by status (non-admin users only see active templates)",
+        description="Filter templates by status (all users see active/beta, only admins see deprecated)",
         example="active"
     ),
     current_user: UserInDB = Depends(get_current_user),
@@ -84,7 +84,8 @@ async def list_templates(
     **Features:**
     - Filter by category (programming_language, framework, database, devops, operating_system)
     - Filter by status (active, deprecated, beta)
-    - Non-admin users only see active templates
+    - All users can see active and beta templates
+    - Only admin users (pro/admin subscription) can see deprecated templates
     - Templates are sorted by creation date
     
     **Default Templates Available:**
@@ -104,14 +105,26 @@ async def list_templates(
         )
         
         # Filter out deprecated templates for non-admin users
+        # All users can see active templates, only admins can see deprecated ones
         initial_count = len(templates)
-        if current_user.subscription_plan not in ["pro", "admin"]:
+        is_admin = current_user.subscription_plan in ["pro", "admin"]
+        
+        if not is_admin:
             templates = [t for t in templates if t.status != TemplateStatus.DEPRECATED]
             logger.info(
-                f"Filtered templates for non-admin user",
+                f"Filtered deprecated templates for non-admin user",
                 user_subscription=current_user.subscription_plan,
+                is_admin=is_admin,
                 initial_count=initial_count,
                 filtered_count=len(templates),
+                user_id=str(current_user.id)
+            )
+        else:
+            logger.info(
+                f"Admin user sees all templates including deprecated",
+                user_subscription=current_user.subscription_plan,
+                is_admin=is_admin,
+                template_count=len(templates),
                 user_id=str(current_user.id)
             )
         
@@ -191,7 +204,8 @@ async def get_template(
     Get detailed information about a specific template.
     
     **Notes:**
-    - Non-admin users cannot access deprecated templates
+    - All users can access active and beta templates
+    - Only admin users (pro/admin subscription) can access deprecated templates
     - Template ID is a 24-character MongoDB ObjectId
     """
     try:
@@ -205,8 +219,9 @@ async def get_template(
             )
         
         # Check if user can access deprecated templates
-        if (template.status == TemplateStatus.DEPRECATED and 
-            current_user.subscription_plan not in ["pro", "admin"]):
+        # All users can see active templates, only admins can see deprecated ones
+        is_admin = current_user.subscription_plan in ["pro", "admin"]
+        if (template.status == TemplateStatus.DEPRECATED and not is_admin):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Template not found"
