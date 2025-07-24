@@ -59,12 +59,6 @@ app = FastAPI(
     ```
     Authorization: Bearer <your-jwt-token>
     ```
-    
-    ## Subscription Plans
-    
-    - **Free**: 1 environment, basic resources
-    - **Starter**: 3 environments, increased resources  
-    - **Pro**: 10 environments, premium resources
     """,
     version="1.0.0",
     lifespan=lifespan,

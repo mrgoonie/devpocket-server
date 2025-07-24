@@ -358,8 +358,7 @@ async def get_environment_metrics(
         401: {"description": "Unauthorized - Invalid or missing token"},
         404: {"description": "Environment not found"},
         500: {"description": "Internal server error"}
-    },
-    tags=["Environment Management"]
+    }
 )
 async def restart_environment(
     environment_id: str = Path(
@@ -461,8 +460,7 @@ async def restart_environment(
         401: {"description": "Unauthorized - Invalid or missing token"},
         404: {"description": "Environment not found"},
         500: {"description": "Internal server error"}
-    },
-    tags=["Environment Monitoring"]
+    }
 )
 async def get_environment_logs(
     environment_id: str = Path(
