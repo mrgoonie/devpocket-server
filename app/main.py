@@ -12,6 +12,7 @@ from app.core.database import connect_to_mongo, close_mongo_connection
 from app.core.logging import configure_logging
 from app.core.security import SecurityHeaders
 from app.middleware.rate_limiting import RateLimitMiddleware
+from app.middleware.slash_redirect import TrailingSlashRedirectMiddleware
 from app.api import auth, environments, websocket, clusters, templates
 
 # Configure logging
@@ -89,6 +90,9 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
+
+# Add trailing slash redirect middleware (should be early in the stack)
+app.add_middleware(TrailingSlashRedirectMiddleware)
 
 # Add rate limiting middleware
 app.add_middleware(RateLimitMiddleware, calls=100, period=60)  # 100 requests per minute

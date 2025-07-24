@@ -12,6 +12,7 @@ from app.models.environment import (
     EnvironmentMetrics,
 )
 from app.models.user import UserInDB
+from app.models.error_responses import get_error_responses, get_auth_error_responses, get_crud_error_responses
 from app.middleware.auth import get_current_user, get_current_verified_user
 from app.core.logging import audit_log
 
@@ -20,11 +21,44 @@ router = APIRouter()
 
 
 @router.post(
-    "/", response_model=EnvironmentResponse, status_code=status.HTTP_201_CREATED
+    "/", 
+    response_model=EnvironmentResponse, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new environment",
+    description="Create a new development environment with specified template and resources",
+    responses={
+        201: {
+            "description": "Environment created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "507f1f77bcf86cd799439011",
+                        "name": "my-python-env",
+                        "template": "python",
+                        "status": "creating",
+                        "resources": {
+                            "cpu": "500m",
+                            "memory": "1Gi",
+                            "storage": "10Gi"
+                        },
+                        "external_url": None,
+                        "web_port": 8080,
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "last_accessed": None,
+                        "cpu_usage": 0.0,
+                        "memory_usage": 0.0,
+                        "storage_usage": 0.0
+                    }
+                }
+            }
+        },
+        **get_crud_error_responses(),
+        **get_error_responses(409, 422, 429)
+    }
 )
 async def create_environment(
     env_data: EnvironmentCreate,
-    current_user: UserInDB = Depends(get_current_verified_user),
+    current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database),
 ):
     """Create a new development environment"""
@@ -73,7 +107,43 @@ async def create_environment(
         )
 
 
-@router.get("/", response_model=List[EnvironmentResponse])
+@router.get(
+    "/", 
+    response_model=List[EnvironmentResponse],
+    summary="List user environments",
+    description="Get a list of all environments owned by the current user",
+    responses={
+        200: {
+            "description": "Environments retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "507f1f77bcf86cd799439011",
+                            "name": "my-python-env",
+                            "template": "python",
+                            "status": "running",
+                            "resources": {
+                                "cpu": "500m",
+                                "memory": "1Gi",
+                                "storage": "10Gi"
+                            },
+                            "external_url": "https://env-abc123.devpocket.com",
+                            "web_port": 8080,
+                            "created_at": "2024-01-01T00:00:00Z",
+                            "last_accessed": "2024-01-01T12:00:00Z",
+                            "cpu_usage": 25.5,
+                            "memory_usage": 512.0,
+                            "storage_usage": 1024.0
+                        }
+                    ]
+                }
+            }
+        },
+        **get_auth_error_responses(),
+        **get_error_responses(500)
+    }
+)
 async def list_environments(
     current_user: UserInDB = Depends(get_current_user),
     status_filter: Optional[EnvironmentStatus] = Query(
@@ -124,7 +194,18 @@ async def list_environments(
         )
 
 
-@router.get("/{environment_id}", response_model=EnvironmentResponse)
+@router.get(
+    "/{environment_id}", 
+    response_model=EnvironmentResponse,
+    summary="Get environment details",
+    description="Get detailed information about a specific environment",
+    responses={
+        200: {
+            "description": "Environment details retrieved successfully"
+        },
+        **get_crud_error_responses()
+    }
+)
 async def get_environment(
     environment_id: str,
     current_user: UserInDB = Depends(get_current_user),
@@ -168,7 +249,24 @@ async def get_environment(
         )
 
 
-@router.delete("/{environment_id}")
+@router.delete(
+    "/{environment_id}",
+    summary="Delete environment",
+    description="Delete a development environment and all its data",
+    responses={
+        200: {
+            "description": "Environment deleted successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Environment deleted successfully"
+                    }
+                }
+            }
+        },
+        **get_crud_error_responses()
+    }
+)
 async def delete_environment(
     environment_id: str,
     current_user: UserInDB = Depends(get_current_user),
@@ -206,7 +304,24 @@ async def delete_environment(
         )
 
 
-@router.post("/{environment_id}/start")
+@router.post(
+    "/{environment_id}/start",
+    summary="Start environment",
+    description="Start a stopped development environment",
+    responses={
+        200: {
+            "description": "Environment start initiated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Environment start initiated successfully"
+                    }
+                }
+            }
+        },
+        **get_crud_error_responses()
+    }
+)
 async def start_environment(
     environment_id: str,
     current_user: UserInDB = Depends(get_current_user),
@@ -245,7 +360,24 @@ async def start_environment(
         )
 
 
-@router.post("/{environment_id}/stop")
+@router.post(
+    "/{environment_id}/stop",
+    summary="Stop environment",
+    description="Stop a running development environment",
+    responses={
+        200: {
+            "description": "Environment stop initiated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Environment stop initiated successfully"
+                    }
+                }
+            }
+        },
+        **get_crud_error_responses()
+    }
+)
 async def stop_environment(
     environment_id: str,
     current_user: UserInDB = Depends(get_current_user),

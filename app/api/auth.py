@@ -7,6 +7,7 @@ from app.core.database import get_database
 from app.services.auth_service import auth_service
 from app.services.email_service import email_service
 from app.models.user import UserCreate, UserLogin, UserResponse, Token, RefreshTokenRequest, EmailVerificationRequest
+from app.models.error_responses import get_error_responses, get_auth_error_responses, get_validation_error_responses
 from app.middleware.auth import get_current_user
 from app.core.security import verify_token
 from app.core.logging import audit_log
@@ -17,7 +18,33 @@ security = HTTPBearer()
 
 
 @router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+    "/register", 
+    response_model=UserResponse, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+    description="Create a new user account with email verification",
+    responses={
+        201: {
+            "description": "User successfully registered",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "507f1f77bcf86cd799439011",
+                        "username": "johndoe",
+                        "email": "john@example.com",
+                        "full_name": "John Doe",
+                        "is_active": True,
+                        "is_verified": False,
+                        "avatar_url": None,
+                        "subscription_plan": "free",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "last_login": None
+                    }
+                }
+            }
+        },
+        **get_error_responses(400, 409, 422, 500)
+    }
 )
 async def register(user_data: UserCreate, db=Depends(get_database)):
     """Register a new user"""
@@ -68,7 +95,27 @@ async def register(user_data: UserCreate, db=Depends(get_database)):
         )
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login", 
+    response_model=Token,
+    summary="User login",
+    description="Authenticate user and return JWT tokens",
+    responses={
+        200: {
+            "description": "Login successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        **get_error_responses(400, 401, 403, 422, 429, 500)
+    }
+)
 async def login(login_data: UserLogin, db=Depends(get_database)):
     """Login with username/email and password"""
     try:
@@ -105,7 +152,27 @@ async def login(login_data: UserLogin, db=Depends(get_database)):
         )
 
 
-@router.post("/google", response_model=Token)
+@router.post(
+    "/google", 
+    response_model=Token,
+    summary="Google OAuth login",
+    description="Authenticate user using Google OAuth token",
+    responses={
+        200: {
+            "description": "Google OAuth login successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        **get_error_responses(400, 401, 422, 500)
+    }
+)
 async def google_login(
     token: str = Body(..., embed=True, description="Google ID token"),
     db=Depends(get_database),
@@ -140,7 +207,19 @@ async def google_login(
         )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me", 
+    response_model=UserResponse,
+    summary="Get current user info",
+    description="Get information about the currently authenticated user",
+    responses={
+        200: {
+            "description": "User information retrieved successfully"
+        },
+        **get_auth_error_responses(),
+        **get_error_responses(500)
+    }
+)
 async def get_current_user_info(current_user=Depends(get_current_user)):
     """Get current user information"""
     return UserResponse(
@@ -157,7 +236,25 @@ async def get_current_user_info(current_user=Depends(get_current_user)):
     )
 
 
-@router.post("/logout")
+@router.post(
+    "/logout",
+    summary="User logout",
+    description="Logout user and invalidate refresh token",
+    responses={
+        200: {
+            "description": "Logout successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Successfully logged out"
+                    }
+                }
+            }
+        },
+        **get_auth_error_responses(),
+        **get_error_responses(500)
+    }
+)
 async def logout(current_user=Depends(get_current_user)):
     """Logout current user"""
     try:
@@ -182,7 +279,27 @@ async def logout(current_user=Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
         )
 
-@router.post("/refresh", response_model=Token)
+@router.post(
+    "/refresh", 
+    response_model=Token,
+    summary="Refresh access token",
+    description="Get a new access token using a valid refresh token",
+    responses={
+        200: {
+            "description": "Token refreshed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        **get_error_responses(400, 401, 422, 500)
+    }
+)
 async def refresh_token(
     token_data: RefreshTokenRequest,
     db=Depends(get_database)
@@ -214,7 +331,24 @@ async def refresh_token(
         )
 
 
-@router.post("/verify-email")
+@router.post(
+    "/verify-email",
+    summary="Verify email address",
+    description="Verify user's email address using verification token",
+    responses={
+        200: {
+            "description": "Email verified successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Email verified successfully"
+                    }
+                }
+            }
+        },
+        **get_error_responses(400, 404, 422, 500)
+    }
+)
 async def verify_email(
     verification_data: EmailVerificationRequest,
     db=Depends(get_database)
@@ -265,7 +399,25 @@ async def verify_email(
             detail="Email verification failed",
         )
 
-@router.post("/resend-verification")
+@router.post(
+    "/resend-verification",
+    summary="Resend verification email",
+    description="Resend email verification token to user's email address",
+    responses={
+        200: {
+            "description": "Verification email sent successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Verification email sent successfully"
+                    }
+                }
+            }
+        },
+        **get_auth_error_responses(),
+        **get_error_responses(400, 422, 500)
+    }
+)
 async def resend_verification_email(
     current_user=Depends(get_current_user),
     db=Depends(get_database)
