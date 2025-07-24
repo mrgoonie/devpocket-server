@@ -193,6 +193,13 @@ class TemplateService:
         if status:
             query["status"] = status
         
+        logger.info(
+            f"Building database query for templates",
+            query=query,
+            category=category.value if category else None,
+            status=status.value if status else None
+        )
+        
         # Check if we have templates in database
         count = await self.db.templates.count_documents({})
         logger.info(f"Total templates in database: {count}")
@@ -208,18 +215,46 @@ class TemplateService:
         cursor = self.db.templates.find(query).sort("created_at", 1)
         templates = []
         
+        logger.info(
+            f"Executing database query for templates",
+            query=query
+        )
+        
+        template_count = 0
         async for template_data in cursor:
+            template_count += 1
+            logger.info(
+                f"Processing template #{template_count}",
+                template_name=template_data.get("name", "unknown"), 
+                template_id=str(template_data.get("_id", "unknown")),
+                template_status=template_data.get("status", "unknown")
+            )
             try:
                 template_dict = dict(template_data)
                 template_dict["id"] = str(template_dict.pop("_id"))
-                templates.append(TemplateResponse(**template_dict))
+                
+                logger.info(
+                    f"Converting template to response format",
+                    template_name=template_dict.get("name", "unknown"),
+                    template_keys=list(template_dict.keys())
+                )
+                
+                template_response = TemplateResponse(**template_dict)
+                templates.append(template_response)
+                
+                logger.info(
+                    f"Successfully converted template",
+                    template_name=template_dict.get("name", "unknown")
+                )
+                
             except Exception as e:
                 logger.error(
                     f"Error converting template to response",
                     template_name=template_data.get("name", "unknown"),
                     template_id=str(template_data.get("_id", "unknown")),
                     error=str(e),
-                    template_data=template_data
+                    template_data=template_data,
+                    error_type=type(e).__name__
                 )
                 # Continue processing other templates instead of failing completely
         

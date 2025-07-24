@@ -99,9 +99,25 @@ async def list_templates(
         template_service.set_database(db)
         
         # Get templates
+        logger.info(
+            f"Fetching templates from service",
+            category=category,
+            status_filter=status_filter,
+            user_id=str(current_user.id),
+            user_subscription=current_user.subscription_plan
+        )
+        
         templates = await template_service.list_templates(
             category=category,
             status=status_filter
+        )
+        
+        logger.info(
+            f"Templates fetched from service - raw count",
+            raw_count=len(templates),
+            raw_template_names=[t.name for t in templates] if templates else [],
+            raw_template_statuses=[t.status.value for t in templates] if templates else [],
+            user_id=str(current_user.id)
         )
         
         # Filter out deprecated templates for non-admin users
