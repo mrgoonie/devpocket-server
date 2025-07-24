@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from typing import List, Optional
 import structlog
 
@@ -18,14 +18,82 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-@router.get("/", response_model=List[TemplateResponse])
+@router.get(
+    "/",
+    response_model=List[TemplateResponse],
+    summary="List all templates",
+    description="Get a list of all available environment templates with optional filtering by category and status",
+    responses={
+        200: {
+            "description": "Successfully retrieved templates",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "507f1f77bcf86cd799439011",
+                            "name": "python",
+                            "display_name": "Python 3.11",
+                            "description": "Python development environment with pip, virtualenv, and common packages",
+                            "category": "programming_language",
+                            "tags": ["python", "python3", "pip", "flask", "django"],
+                            "docker_image": "python:3.11-slim",
+                            "default_port": 8080,
+                            "default_resources": {
+                                "cpu": "500m",
+                                "memory": "1Gi",
+                                "storage": "10Gi"
+                            },
+                            "environment_variables": {
+                                "PYTHONPATH": "/workspace"
+                            },
+                            "startup_commands": ["pip install --upgrade pip"],
+                            "documentation_url": "https://docs.python.org/3/",
+                            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg",
+                            "status": "active",
+                            "version": "1.0.0",
+                            "created_at": "2024-01-01T00:00:00Z",
+                            "updated_at": "2024-01-01T00:00:00Z",
+                            "usage_count": 42
+                        }
+                    ]
+                }
+            }
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def list_templates(
-    category: Optional[TemplateCategory] = Query(None, description="Filter by category"),
-    status_filter: Optional[TemplateStatus] = Query(None, alias="status", description="Filter by status"),
+    category: Optional[TemplateCategory] = Query(
+        None, 
+        description="Filter templates by category",
+        example="programming_language"
+    ),
+    status_filter: Optional[TemplateStatus] = Query(
+        None, 
+        alias="status", 
+        description="Filter templates by status (non-admin users only see active templates)",
+        example="active"
+    ),
     current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database)
 ):
-    """List all available environment templates"""
+    """
+    List all available environment templates.
+    
+    **Features:**
+    - Filter by category (programming_language, framework, database, devops, operating_system)
+    - Filter by status (active, deprecated, beta)
+    - Non-admin users only see active templates
+    - Templates are sorted by creation date
+    
+    **Default Templates Available:**
+    - Python 3.11
+    - Node.js 18 LTS
+    - Go 1.21
+    - Rust Latest
+    - Ubuntu 22.04 LTS
+    """
     try:
         template_service.set_database(db)
         
@@ -57,13 +125,62 @@ async def list_templates(
         )
 
 
-@router.get("/{template_id}", response_model=TemplateResponse)
+@router.get(
+    "/{template_id}",
+    response_model=TemplateResponse,
+    summary="Get template by ID",
+    description="Retrieve detailed information about a specific template",
+    responses={
+        200: {
+            "description": "Template details retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "507f1f77bcf86cd799439011",
+                        "name": "nodejs",
+                        "display_name": "Node.js 18 LTS",
+                        "description": "Node.js development environment with npm, yarn, and popular packages",
+                        "category": "programming_language",
+                        "tags": ["nodejs", "npm", "yarn", "express", "react"],
+                        "docker_image": "node:18-slim",
+                        "default_port": 3000,
+                        "default_resources": {
+                            "cpu": "500m",
+                            "memory": "1Gi",
+                            "storage": "10Gi"
+                        },
+                        "environment_variables": {
+                            "NODE_ENV": "development"
+                        },
+                        "startup_commands": ["npm install -g nodemon typescript"],
+                        "documentation_url": "https://nodejs.org/en/docs/",
+                        "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nodejs/nodejs-original.svg",
+                        "status": "active",
+                        "version": "1.0.0",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                        "usage_count": 123
+                    }
+                }
+            }
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        404: {"description": "Template not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_template(
-    template_id: str,
+    template_id: str = Path(..., description="The template ID", example="507f1f77bcf86cd799439011"),
     current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database)
 ):
-    """Get specific template details"""
+    """
+    Get detailed information about a specific template.
+    
+    **Notes:**
+    - Non-admin users cannot access deprecated templates
+    - Template ID is a 24-character MongoDB ObjectId
+    """
     try:
         template_service.set_database(db)
         
@@ -113,13 +230,72 @@ async def get_template(
         )
 
 
-@router.post("/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=TemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new template",
+    description="Create a new environment template (Admin only)",
+    responses={
+        201: {
+            "description": "Template created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "507f1f77bcf86cd799439011",
+                        "name": "ruby",
+                        "display_name": "Ruby 3.2",
+                        "description": "Ruby development environment with bundler and Rails support",
+                        "category": "programming_language",
+                        "tags": ["ruby", "rails", "bundler"],
+                        "docker_image": "ruby:3.2-slim",
+                        "default_port": 3000,
+                        "default_resources": {
+                            "cpu": "500m",
+                            "memory": "1Gi",
+                            "storage": "10Gi"
+                        },
+                        "environment_variables": {
+                            "RAILS_ENV": "development"
+                        },
+                        "startup_commands": ["gem install bundler rails"],
+                        "documentation_url": "https://www.ruby-lang.org/en/documentation/",
+                        "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ruby/ruby-original.svg",
+                        "status": "active",
+                        "version": "1.0.0",
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                        "usage_count": 0
+                    }
+                }
+            }
+        },
+        400: {"description": "Bad request - Template name already exists"},
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        403: {"description": "Forbidden - Admin access required"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def create_template(
     template_data: TemplateCreate,
     current_admin: UserInDB = Depends(get_current_admin_user),
     db=Depends(get_database)
 ):
-    """Create a new template (Admin only)"""
+    """
+    Create a new environment template.
+    
+    **Requirements:**
+    - Admin access required
+    - Template name must be unique
+    - Valid Docker image must be specified
+    
+    **Template Categories:**
+    - `programming_language`: Python, Node.js, Go, etc.
+    - `framework`: Django, React, Angular, etc.
+    - `database`: PostgreSQL, MongoDB, Redis, etc.
+    - `devops`: Docker, Kubernetes, CI/CD tools
+    - `operating_system`: Ubuntu, Alpine, Debian, etc.
+    """
     try:
         template_service.set_database(db)
         
@@ -169,14 +345,35 @@ async def create_template(
         )
 
 
-@router.put("/{template_id}", response_model=TemplateResponse)
+@router.put(
+    "/{template_id}",
+    response_model=TemplateResponse,
+    summary="Update a template",
+    description="Update an existing template (Admin only)",
+    responses={
+        200: {
+            "description": "Template updated successfully"
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        403: {"description": "Forbidden - Admin access required"},
+        404: {"description": "Template not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def update_template(
-    template_id: str,
-    template_data: TemplateUpdate,
+    template_id: str = Path(..., description="The template ID to update", example="507f1f77bcf86cd799439011"),
+    template_data: TemplateUpdate = ...,
     current_admin: UserInDB = Depends(get_current_admin_user),
     db=Depends(get_database)
 ):
-    """Update a template (Admin only)"""
+    """
+    Update an existing template.
+    
+    **Requirements:**
+    - Admin access required
+    - Only provided fields will be updated
+    - Cannot change template name once created
+    """
     try:
         template_service.set_database(db)
         
@@ -224,13 +421,41 @@ async def update_template(
         )
 
 
-@router.delete("/{template_id}")
+@router.delete(
+    "/{template_id}",
+    summary="Delete a template",
+    description="Delete a template by setting its status to deprecated (Admin only)",
+    responses={
+        200: {
+            "description": "Template deleted successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Template deleted successfully"
+                    }
+                }
+            }
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        403: {"description": "Forbidden - Admin access required"},
+        404: {"description": "Template not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def delete_template(
-    template_id: str,
+    template_id: str = Path(..., description="The template ID to delete", example="507f1f77bcf86cd799439011"),
     current_admin: UserInDB = Depends(get_current_admin_user),
     db=Depends(get_database)
 ):
-    """Delete a template (Admin only) - Sets status to deprecated"""
+    """
+    Delete a template (soft delete).
+    
+    **Important:**
+    - Templates are not physically deleted
+    - Status is set to 'deprecated'
+    - Deprecated templates are hidden from non-admin users
+    - Existing environments using this template will continue to work
+    """
     try:
         template_service.set_database(db)
         
@@ -259,12 +484,42 @@ async def delete_template(
         )
 
 
-@router.post("/initialize")
+@router.post(
+    "/initialize",
+    summary="Initialize default templates",
+    description="Initialize the system with default templates (Admin only)",
+    responses={
+        200: {
+            "description": "Default templates initialized successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Default templates initialized successfully"
+                    }
+                }
+            }
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        403: {"description": "Forbidden - Admin access required"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def initialize_default_templates(
     current_admin: UserInDB = Depends(get_current_admin_user),
     db=Depends(get_database)
 ):
-    """Initialize default templates (Admin only)"""
+    """
+    Initialize the system with default templates.
+    
+    **Default Templates:**
+    - Python 3.11 with Flask/Django support
+    - Node.js 18 LTS with npm/yarn
+    - Go 1.21 with development tools
+    - Rust Latest with cargo
+    - Ubuntu 22.04 LTS base environment
+    
+    **Note:** Existing templates with the same names will be skipped
+    """
     try:
         template_service.set_database(db)
         

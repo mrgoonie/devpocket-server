@@ -38,7 +38,33 @@ class TemplateBase(BaseModel):
 
 
 class TemplateCreate(TemplateBase):
-    pass
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "java",
+                "display_name": "Java 17 LTS",
+                "description": "Java development environment with Maven and Gradle support",
+                "category": "programming_language",
+                "tags": ["java", "jvm", "maven", "gradle", "spring"],
+                "docker_image": "openjdk:17-slim",
+                "default_port": 8080,
+                "default_resources": {
+                    "cpu": "1000m",
+                    "memory": "2Gi",
+                    "storage": "15Gi"
+                },
+                "environment_variables": {
+                    "JAVA_HOME": "/usr/local/openjdk-17",
+                    "MAVEN_HOME": "/usr/share/maven"
+                },
+                "startup_commands": [
+                    "apt-get update && apt-get install -y maven gradle",
+                    "mkdir -p /workspace"
+                ],
+                "documentation_url": "https://docs.oracle.com/en/java/",
+                "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg"
+            }
+        }
 
 
 class TemplateUpdate(BaseModel):
@@ -53,6 +79,19 @@ class TemplateUpdate(BaseModel):
     documentation_url: Optional[str] = None
     icon_url: Optional[str] = None
     status: Optional[TemplateStatus] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "description": "Updated Java development environment with Spring Boot support",
+                "tags": ["java", "spring-boot", "microservices"],
+                "environment_variables": {
+                    "JAVA_HOME": "/usr/local/openjdk-17",
+                    "SPRING_PROFILES_ACTIVE": "dev"
+                },
+                "status": "active"
+            }
+        }
 
 
 class TemplateInDB(TemplateBase):

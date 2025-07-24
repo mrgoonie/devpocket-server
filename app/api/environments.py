@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from typing import List, Optional
 import structlog
 
@@ -330,13 +330,60 @@ async def get_environment_metrics(
         )
 
 
-@router.post("/{environment_id}/restart")
+@router.post(
+    "/{environment_id}/restart",
+    summary="Restart an environment",
+    description="Restart a development environment by recreating its container",
+    responses={
+        200: {
+            "description": "Environment restart initiated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Environment restart initiated successfully"
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Bad request - Environment cannot be restarted",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Environment cannot be restarted in current state"
+                    }
+                }
+            }
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        404: {"description": "Environment not found"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["Environment Management"]
+)
 async def restart_environment(
-    environment_id: str,
+    environment_id: str = Path(
+        ..., 
+        description="The environment ID to restart",
+        example="507f1f77bcf86cd799439011"
+    ),
     current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database),
 ):
-    """Restart an environment"""
+    """
+    Restart a development environment.
+    
+    **Process:**
+    1. Environment status changes to 'creating' (restarting)
+    2. Container/pod is recreated with same configuration
+    3. Status returns to 'running' when ready
+    
+    **Requirements:**
+    - Environment must be in 'running', 'stopped', or 'error' state
+    - User must own the environment
+    
+    **Note:** Restart typically takes 10-30 seconds
+    """
     try:
         environment_service.set_database(db)
 
@@ -369,15 +416,92 @@ async def restart_environment(
         )
 
 
-@router.get("/{environment_id}/logs")
+@router.get(
+    "/{environment_id}/logs",
+    summary="Get environment logs",
+    description="Retrieve logs from a development environment",
+    responses={
+        200: {
+            "description": "Logs retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "environment_id": "507f1f77bcf86cd799439011",
+                        "environment_name": "my-python-env",
+                        "logs": [
+                            {
+                                "timestamp": "2024-01-01T12:00:00Z",
+                                "level": "INFO",
+                                "message": "Starting Python application server",
+                                "source": "container"
+                            },
+                            {
+                                "timestamp": "2024-01-01T12:00:01Z",
+                                "level": "INFO",
+                                "message": "Flask application started on port 8080",
+                                "source": "container"
+                            }
+                        ],
+                        "total_lines": 2,
+                        "has_more": False
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Bad request - Invalid timestamp format",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Invalid timestamp format. Use ISO format (e.g., 2024-01-01T12:00:00Z)"
+                    }
+                }
+            }
+        },
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        404: {"description": "Environment not found"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["Environment Monitoring"]
+)
 async def get_environment_logs(
-    environment_id: str,
+    environment_id: str = Path(
+        ..., 
+        description="The environment ID to get logs from",
+        example="507f1f77bcf86cd799439011"
+    ),
     current_user: UserInDB = Depends(get_current_user),
-    lines: int = Query(100, description="Number of log lines to retrieve", ge=1, le=1000),
-    since: Optional[str] = Query(None, description="Get logs since timestamp (ISO format)"),
+    lines: int = Query(
+        100, 
+        description="Number of log lines to retrieve",
+        ge=1,
+        le=1000,
+        example=100
+    ),
+    since: Optional[str] = Query(
+        None,
+        description="Get logs since timestamp (ISO 8601 format)",
+        example="2024-01-01T12:00:00Z"
+    ),
     db=Depends(get_database),
 ):
-    """Get environment logs"""
+    """
+    Get logs from a development environment.
+    
+    **Features:**
+    - Retrieve last N lines of logs (up to 1000)
+    - Filter logs by timestamp
+    - Logs include level (INFO, DEBUG, WARNING, ERROR)
+    - Real-time log streaming available via WebSocket endpoint
+    
+    **Log Levels:**
+    - `INFO`: General information messages
+    - `DEBUG`: Detailed debugging information
+    - `WARNING`: Warning messages
+    - `ERROR`: Error messages
+    
+    **Note:** In production, logs are retrieved from Kubernetes pod logs
+    """
     try:
         environment_service.set_database(db)
 
