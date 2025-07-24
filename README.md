@@ -102,6 +102,11 @@ DEBUG=true
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
 
+Add a default cluster credentials to database
+```bash
+ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
+```
+
 ### 3. Start with Docker Compose
 
 ```bash

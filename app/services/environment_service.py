@@ -119,10 +119,10 @@ class EnvironmentService:
     def _get_template_image(self, template: EnvironmentTemplate) -> str:
         """Get Docker image for environment template"""
         template_images = {
-            EnvironmentTemplate.PYTHON: "coder/code-server:latest",
-            EnvironmentTemplate.NODEJS: "coder/code-server:latest", 
-            EnvironmentTemplate.GOLANG: "coder/code-server:latest",
-            EnvironmentTemplate.UBUNTU: "coder/code-server:latest",
+            EnvironmentTemplate.PYTHON: "ubuntu:22.04",
+            EnvironmentTemplate.NODEJS: "ubuntu:22.04", 
+            EnvironmentTemplate.GOLANG: "ubuntu:22.04",
+            EnvironmentTemplate.UBUNTU: "ubuntu:22.04",
         }
         
         return template_images.get(template, template_images[EnvironmentTemplate.UBUNTU])
@@ -215,31 +215,64 @@ class EnvironmentService:
                     else:
                         raise
 
-                # Step 2: Create persistent volume claim
-                pvc_manifest = client.V1PersistentVolumeClaim(
+                # Step 2: Create persistent volume claims for workspace and system directories
+                # Workspace PVC
+                workspace_pvc_manifest = client.V1PersistentVolumeClaim(
                     metadata=client.V1ObjectMeta(
-                        name=f"pvc-{environment.pod_name}",
+                        name=f"workspace-{environment.pod_name}",
                         namespace=environment.namespace,
                         labels={
                             "app": "devpocket",
                             "environment": environment.pod_name,
-                            "user-id": environment.user_id
+                            "user-id": environment.user_id,
+                            "volume-type": "workspace"
                         }
                     ),
                     spec=client.V1PersistentVolumeClaimSpec(
                         access_modes=["ReadWriteOnce"],
+                        storage_class_name="microk8s-hostpath",
                         resources=client.V1ResourceRequirements(
                             requests={"storage": environment.resources.storage}
                         )
                     )
                 )
                 
+                # System directories PVC for package persistence
+                system_pvc_manifest = client.V1PersistentVolumeClaim(
+                    metadata=client.V1ObjectMeta(
+                        name=f"system-{environment.pod_name}",
+                        namespace=environment.namespace,
+                        labels={
+                            "app": "devpocket",
+                            "environment": environment.pod_name,
+                            "user-id": environment.user_id,
+                            "volume-type": "system"
+                        }
+                    ),
+                    spec=client.V1PersistentVolumeClaimSpec(
+                        access_modes=["ReadWriteOnce"],
+                        storage_class_name="microk8s-hostpath",
+                        resources=client.V1ResourceRequirements(
+                            requests={"storage": "5Gi"}  # 5GB for system packages
+                        )
+                    )
+                )
+                
                 try:
+                    # Create workspace PVC
                     v1_core.create_namespaced_persistent_volume_claim(
                         namespace=environment.namespace,
-                        body=pvc_manifest
+                        body=workspace_pvc_manifest
                     )
-                    logger.info(f"Created PVC for environment: {environment.pod_name}")
+                    logger.info(f"Created workspace PVC for environment: {environment.pod_name}")
+                    
+                    # Create system PVC
+                    v1_core.create_namespaced_persistent_volume_claim(
+                        namespace=environment.namespace,
+                        body=system_pvc_manifest
+                    )
+                    logger.info(f"Created system PVC for environment: {environment.pod_name}")
+                    
                 except ApiException as e:
                     if e.status != 409:  # Ignore if already exists
                         raise
@@ -277,8 +310,8 @@ class EnvironmentService:
                                     client.V1Container(
                                         name="devpocket-env",
                                         image=self._get_template_image(environment.template),
-                                        command=["/usr/bin/entrypoint.sh"],
-                                        args=["--bind-addr", "0.0.0.0:8080", "--auth", "none", "--disable-telemetry"],
+                                        command=["/bin/bash"],
+                                        args=["-c", "sleep infinity"],
                                         ports=[
                                             client.V1ContainerPort(container_port=8080, name="web"),
                                             client.V1ContainerPort(container_port=22, name="ssh")
@@ -304,27 +337,41 @@ class EnvironmentService:
                                             client.V1VolumeMount(
                                                 name="workspace",
                                                 mount_path="/workspace"
+                                            ),
+                                            client.V1VolumeMount(
+                                                name="system-dirs",
+                                                mount_path="/var/lib/apt"
+                                            ),
+                                            client.V1VolumeMount(
+                                                name="system-dirs",
+                                                mount_path="/usr/local",
+                                                sub_path="usr-local"
+                                            ),
+                                            client.V1VolumeMount(
+                                                name="system-dirs", 
+                                                mount_path="/opt",
+                                                sub_path="opt"
                                             )
                                         ],
                                         working_dir="/workspace",
-                                        security_context=client.V1SecurityContext(
-                                            run_as_non_root=True,
-                                            run_as_user=1000,
-                                            run_as_group=1000
-                                        )
+                                        # Allow root for initial setup
                                     )
                                 ],
                                 volumes=[
                                     client.V1Volume(
                                         name="workspace",
                                         persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                            claim_name=f"pvc-{environment.pod_name}"
+                                            claim_name=f"workspace-{environment.pod_name}"
+                                        )
+                                    ),
+                                    client.V1Volume(
+                                        name="system-dirs",
+                                        persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                            claim_name=f"system-{environment.pod_name}"
                                         )
                                     )
                                 ],
-                                security_context=client.V1PodSecurityContext(
-                                    fs_group=1000
-                                )
+                                # Allow root access for development environment
                             )
                         )
                     )

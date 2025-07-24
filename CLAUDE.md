@@ -61,6 +61,9 @@ docker-compose up -d mongo redis
 
 # Run development server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Add a default cluster credentials to database
+ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
 ```
 
 ### Docker Development
