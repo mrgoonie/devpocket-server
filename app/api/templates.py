@@ -64,37 +64,21 @@ router = APIRouter()
     }
 )
 async def list_templates(
-    category: Optional[TemplateCategory] = Query(
-        None, 
-        description="Filter templates by category",
-        example="programming_language"
-    ),
-    status_filter: Optional[TemplateStatus] = Query(
-        None, 
-        alias="status", 
-        description="Filter templates by status (all users see active/beta, only admins see deprecated)",
-        example="active"
-    ),
-    current_user: UserInDB = Depends(get_current_user),
-    db=Depends(get_database)
-):
-    """
-    List all available environment templates.
+    category: Optional[TemplateCategory] = Query(None, description="Filter by template category"),
+    status_filter: Optional[TemplateStatus] = Query(None, alias="status", description="Filter by template status"),
+    db=Depends(get_database),
+    current_user: UserInDB = Depends(get_current_user)
+) -> List[TemplateResponse]:
+    """Get all available environment templates"""
+    logger.info(
+        "=== TEMPLATES ENDPOINT CALLED ===",
+        endpoint="/api/v1/templates/",
+        method="GET",
+        user_id=str(current_user.id) if current_user else "No user",
+        category=category,
+        status_filter=status_filter
+    )
     
-    **Features:**
-    - Filter by category (programming_language, framework, database, devops, operating_system)
-    - Filter by status (active, deprecated, beta)
-    - All users can see active and beta templates
-    - Only admin users (pro/admin subscription) can see deprecated templates
-    - Templates are sorted by creation date
-    
-    **Default Templates Available:**
-    - Python 3.11
-    - Node.js 18 LTS
-    - Go 1.21
-    - Rust Latest
-    - Ubuntu 22.04 LTS
-    """
     try:
         template_service.set_database(db)
         
