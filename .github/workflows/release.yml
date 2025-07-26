@@ -39,6 +39,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-test.txt
+        pip install build
 
     - name: Configure Git
       run: |
@@ -51,12 +52,15 @@ jobs:
         REPOSITORY_USERNAME: __token__
         REPOSITORY_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        # Check if release is needed using dry-run mode
-        if semantic-release version --dry-run --print | grep -q "No release will be made"; then
+        # Check what the next version would be
+        echo "Checking if release is needed..."
+        NEXT_VERSION=$(semantic-release version --print 2>/dev/null || echo "No release")
+
+        if [ "$NEXT_VERSION" = "No release" ] || echo "$NEXT_VERSION" | grep -q "No release will be made"; then
           echo "No release needed"
           echo "RELEASE_MADE=false" >> $GITHUB_ENV
         else
-          echo "Making release"
+          echo "Making release with version: $NEXT_VERSION"
           semantic-release version
           echo "RELEASE_MADE=true" >> $GITHUB_ENV
         fi
