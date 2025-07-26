@@ -197,6 +197,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
 
+    services:
+      mongodb:
+        image: mongo:6.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: testpassword
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --username root --password testpassword --authenticationDatabase admin --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
