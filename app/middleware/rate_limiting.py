@@ -21,7 +21,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.period = period  # Time period in seconds
         self.requests: Dict[str, list] = {}
         # Check if we're in a test environment
-        self.is_test_env = os.environ.get("TESTING", "false").lower() == "true"
+        self.is_test_env = (
+            os.environ.get("TESTING", "false").lower() == "true"
+            or os.environ.get("ENVIRONMENT", "").lower() == "test"
+        )
 
     def get_client_ip(self, request: Request) -> str:
         """Extract client IP address"""

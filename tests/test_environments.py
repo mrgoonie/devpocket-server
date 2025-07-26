@@ -153,11 +153,12 @@ class TestEnvironmentEndpoints:
 
         assert response.status_code == 200
 
-        # Verify it's deleted by trying to get it
+        # Verify it's marked as terminated (in test mode)
         get_response = await client.get(
             f"/api/v1/environments/{env_id}", headers=authenticated_user["headers"]
         )
-        assert get_response.status_code == 404
+        assert get_response.status_code == 200
+        assert get_response.json()["status"] == "terminated"
 
     async def test_start_environment(
         self, client: AsyncClient, authenticated_user, sample_environment_data

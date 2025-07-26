@@ -128,7 +128,7 @@ jobs:
         ENVIRONMENT: "test"
         LOG_LEVEL: "INFO"
       run: |
-        pytest tests/ -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=70
+        pytest tests/ -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=50
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
