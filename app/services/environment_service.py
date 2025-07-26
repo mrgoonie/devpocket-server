@@ -23,7 +23,10 @@ from app.models.user import UserInDB
 logger = structlog.get_logger(__name__)
 
 # Check if we're in test mode
-IS_TEST_ENV = os.environ.get("TESTING", "false").lower() == "true"
+IS_TEST_ENV = (
+    os.environ.get("TESTING", "false").lower() == "true"
+    or os.environ.get("ENVIRONMENT", "").lower() == "test"
+)
 
 
 class EnvironmentService:
