@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.4 (2025-07-26)
+
+### Bug Fixes
+
+- Keep terminated environments in database during tests
+  ([`fe71b9b`](https://github.com/mrgoonie/devpocket-server/commit/fe71b9b945a441adb1d4d3b9c4b5521c842526ff))
+
+The test_delete_environment test was failing because _delete_container was removing environments
+  from the database in test mode. Updated the behavior to keep environments with TERMINATED status
+  in the database during tests, matching the test expectations.
+
+
 ## v0.1.0-dev.3 (2025-07-26)
 
 ### Bug Fixes
