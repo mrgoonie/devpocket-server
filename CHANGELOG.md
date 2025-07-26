@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.9 (2025-07-26)
+
+### Features
+
+- Add status field to environment update API
+  ([`8fd8483`](https://github.com/mrgoonie/devpocket-server/commit/8fd8483ca3a493cf81ffecbc2f4feffc71cc6e2c))
+
+- Add status field to EnvironmentUpdate model - Implement status transition validation in
+  environment service - Define valid state transitions (creating->running/error,
+  running->stopped/error/terminated, etc.) - Add comprehensive tests for status updates and invalid
+  transitions - Update API documentation to include status field
+
+Valid status transitions: - CREATING → RUNNING, ERROR - RUNNING → STOPPED, ERROR, TERMINATED -
+  STOPPED → RUNNING, TERMINATED - ERROR → RUNNING, TERMINATED - TERMINATED → (terminal state, no
+  transitions)
+
+
 ## v0.1.0-dev.8 (2025-07-26)
 
 ### Features
