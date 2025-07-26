@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.7 (2025-07-26)
+
+### Bug Fixes
+
+- Add MongoDB service to build-test job in GitHub Actions
+  ([`b8c665e`](https://github.com/mrgoonie/devpocket-server/commit/b8c665e3ae3e979f2ecacb653aac60afa26e0192))
+
+The build-test job was failing because the Docker container couldn't connect to MongoDB. Added the
+  same MongoDB service configuration that exists in the test job to ensure database connectivity
+  during Docker image testing.
+
+
 ## v0.1.0-dev.6 (2025-07-26)
 
 ### Bug Fixes
