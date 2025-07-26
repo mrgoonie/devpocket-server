@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.8 (2025-07-26)
+
+### Features
+
+- Add update environment API endpoint
+  ([`ed7d5a1`](https://github.com/mrgoonie/devpocket-server/commit/ed7d5a13ddce30c128ef43038b8979e62b44814a))
+
+- Add PUT /api/v1/environments/{environment_id} endpoint - Support updating name, resources, and
+  environment variables - Add validation for user subscription limits - Include audit logging for
+  update operations - Add comprehensive test cases for update functionality
+
+
 ## v0.1.0-dev.7 (2025-07-26)
 
 ### Bug Fixes
