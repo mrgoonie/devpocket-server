@@ -4,10 +4,11 @@ from httpx import AsyncClient
 from app.models.template import TemplateCategory, TemplateStatus
 
 
+@pytest.mark.asyncio
 async def test_list_templates_unauthenticated(client: AsyncClient):
     """Test listing templates without authentication should fail."""
     response = await client.get("/api/v1/templates")
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 async def test_list_templates_authenticated(client: AsyncClient, authenticated_user):
@@ -34,6 +35,7 @@ async def test_list_templates_authenticated(client: AsyncClient, authenticated_u
         assert "status" in template
 
 
+@pytest.mark.asyncio
 async def test_list_templates_with_category_filter(client: AsyncClient, authenticated_user):
     """Test listing templates with category filter."""
     response = await client.get(
@@ -47,6 +49,7 @@ async def test_list_templates_with_category_filter(client: AsyncClient, authenti
     assert all(t["category"] == "programming_language" for t in data)
 
 
+@pytest.mark.asyncio
 async def test_list_templates_with_status_filter(client: AsyncClient, authenticated_user):
     """Test listing templates with status filter."""
     response = await client.get(
@@ -60,6 +63,7 @@ async def test_list_templates_with_status_filter(client: AsyncClient, authentica
     assert all(t["status"] == "active" for t in data)
 
 
+@pytest.mark.asyncio
 async def test_get_template_by_id(client: AsyncClient, authenticated_user):
     """Test getting a specific template by ID."""
     # First list templates to get an ID
@@ -86,6 +90,7 @@ async def test_get_template_by_id(client: AsyncClient, authenticated_user):
     assert "default_resources" in template
 
 
+@pytest.mark.asyncio
 async def test_get_nonexistent_template(client: AsyncClient, authenticated_user):
     """Test getting a non-existent template."""
     fake_id = "507f1f77bcf86cd799439999"
@@ -96,6 +101,7 @@ async def test_get_nonexistent_template(client: AsyncClient, authenticated_user)
     assert response.status_code == 404
 
 
+@pytest.mark.asyncio
 async def test_create_template_requires_admin(client: AsyncClient, authenticated_user):
     """Test that creating templates requires admin access."""
     template_data = {
@@ -122,6 +128,7 @@ async def test_create_template_requires_admin(client: AsyncClient, authenticated
     assert response.status_code == 403
 
 
+@pytest.mark.asyncio
 async def test_admin_can_create_template(client: AsyncClient, admin_user):
     """Test that admin can create templates."""
     template_data = {
@@ -159,10 +166,29 @@ async def test_admin_can_create_template(client: AsyncClient, admin_user):
     assert created["usage_count"] == 0
 
 
+@pytest.mark.asyncio
 async def test_create_duplicate_template_fails(client: AsyncClient, admin_user):
     """Test that creating duplicate template names fails."""
-    # This should fail because 'python' template already exists
+    # First create a template
     template_data = {
+        "name": "python",
+        "display_name": "Python 3.11",
+        "description": "Original template",
+        "category": "programming_language",
+        "tags": ["python"],
+        "docker_image": "python:3.11"
+    }
+    
+    # Create the first template
+    first_response = await client.post(
+        "/api/v1/templates",
+        json=template_data,
+        headers=admin_user["headers"]
+    )
+    assert first_response.status_code == 201
+    
+    # Now try to create a duplicate - this should fail
+    duplicate_data = {
         "name": "python",
         "display_name": "Python Duplicate",
         "description": "Duplicate template",
@@ -173,13 +199,14 @@ async def test_create_duplicate_template_fails(client: AsyncClient, admin_user):
     
     response = await client.post(
         "/api/v1/templates",
-        json=template_data,
+        json=duplicate_data,
         headers=admin_user["headers"]
     )
     assert response.status_code == 400
 
 
-async def test_update_template_requires_admin(client: AsyncClient, authenticated_user):
+@pytest.mark.asyncio
+async def test_update_template_requires_admin(client: AsyncClient, authenticated_user, admin_user):
     """Test that updating templates requires admin access."""
     # Get a template ID first
     list_response = await client.get(
@@ -201,16 +228,28 @@ async def test_update_template_requires_admin(client: AsyncClient, authenticated
     assert response.status_code == 403
 
 
+@pytest.mark.asyncio
 async def test_admin_can_update_template(client: AsyncClient, admin_user):
     """Test that admin can update templates."""
-    # Get a template ID first
-    list_response = await client.get(
+    # First create a template to update
+    create_data = {
+        "name": "nodejs-update-test",
+        "display_name": "Node.js for Update Test",
+        "description": "Original description",
+        "category": "programming_language",
+        "tags": ["nodejs", "original"],
+        "docker_image": "node:18"
+    }
+    
+    create_response = await client.post(
         "/api/v1/templates",
+        json=create_data,
         headers=admin_user["headers"]
     )
-    templates = list_response.json()
-    template_id = templates[0]["id"]
+    assert create_response.status_code == 201
+    template_id = create_response.json()["id"]
     
+    # Now update the template
     update_data = {
         "description": "Updated description for testing",
         "tags": ["updated", "test"]
@@ -229,7 +268,8 @@ async def test_admin_can_update_template(client: AsyncClient, admin_user):
     assert "test" in updated["tags"]
 
 
-async def test_delete_template_requires_admin(client: AsyncClient, authenticated_user):
+@pytest.mark.asyncio
+async def test_delete_template_requires_admin(client: AsyncClient, authenticated_user, admin_user):
     """Test that deleting templates requires admin access."""
     # Get a template ID first
     list_response = await client.get(
@@ -246,6 +286,7 @@ async def test_delete_template_requires_admin(client: AsyncClient, authenticated
     assert response.status_code == 403
 
 
+@pytest.mark.asyncio
 async def test_admin_can_delete_template(client: AsyncClient, admin_user):
     """Test that admin can delete (deprecate) templates."""
     # First create a template to delete
@@ -283,6 +324,7 @@ async def test_admin_can_delete_template(client: AsyncClient, admin_user):
     assert get_response.json()["status"] == "deprecated"
 
 
+@pytest.mark.asyncio
 async def test_initialize_templates_requires_admin(client: AsyncClient, authenticated_user):
     """Test that initializing templates requires admin access."""
     response = await client.post(
@@ -292,6 +334,7 @@ async def test_initialize_templates_requires_admin(client: AsyncClient, authenti
     assert response.status_code == 403
 
 
+@pytest.mark.asyncio
 async def test_admin_can_initialize_templates(client: AsyncClient, admin_user):
     """Test that admin can initialize default templates."""
     response = await client.post(

@@ -278,7 +278,14 @@ class TemplateService:
         if self.db is None:
             raise ValueError("Database not initialized")
 
-        template_data = await self.db.templates.find_one({"_id": template_id})
+        try:
+            # Convert string ID to ObjectId for MongoDB query
+            object_id = ObjectId(template_id)
+        except Exception:
+            # Invalid ObjectId format
+            return None
+
+        template_data = await self.db.templates.find_one({"_id": object_id})
         if template_data:
             template_data["_id"] = str(template_data["_id"])
             return TemplateInDB(**template_data)
@@ -335,6 +342,13 @@ class TemplateService:
         if self.db is None:
             raise ValueError("Database not initialized")
 
+        try:
+            # Convert string ID to ObjectId for MongoDB query
+            object_id = ObjectId(template_id)
+        except Exception:
+            # Invalid ObjectId format
+            return None
+
         update_dict = {
             k: v for k, v in update_data.model_dump().items() if v is not None
         }
@@ -345,7 +359,7 @@ class TemplateService:
         update_dict["updated_at"] = datetime.utcnow()
 
         result = await self.db.templates.update_one(
-            {"_id": template_id}, {"$set": update_dict}
+            {"_id": object_id}, {"$set": update_dict}
         )
 
         if result.modified_count > 0:
@@ -357,8 +371,15 @@ class TemplateService:
         if self.db is None:
             raise ValueError("Database not initialized")
 
+        try:
+            # Convert string ID to ObjectId for MongoDB query
+            object_id = ObjectId(template_id)
+        except Exception:
+            # Invalid ObjectId format
+            return False
+
         result = await self.db.templates.update_one(
-            {"_id": template_id},
+            {"_id": object_id},
             {
                 "$set": {
                     "status": TemplateStatus.DEPRECATED,
