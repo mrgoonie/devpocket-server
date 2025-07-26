@@ -8,6 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from app.main import app
 from app.core.config import settings
 from app.core.database import Database, get_database
+from app.services.template_service import template_service
 
 
 # Test database configuration
@@ -54,17 +55,30 @@ async def test_database():
 async def client(test_database: Database):
     """Create test client with test database."""
     
+    # Seed default templates
+    template_service.set_database(test_database.database)
+    await template_service.initialize_default_templates()
+    
     # Override database dependency
     async def get_test_database():
         return test_database.database
     
     app.dependency_overrides[get_database] = get_test_database
     
+    # Also set the global database client for readiness checks
+    from app.core.database import db as global_db
+    global_db.client = test_database.client
+    global_db.database = test_database.database
+    
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
     
     # Clean up dependency override
     app.dependency_overrides.clear()
+    
+    # Clean up global database reference
+    global_db.client = None
+    global_db.database = None
 
 
 @pytest_asyncio.fixture
@@ -135,8 +149,7 @@ def sample_environment_data():
     """Sample environment data for testing."""
     return {
         "name": "test-env",
-        "template": "python",
-        "description": "Test environment"
+        "template": "python"
     }
 
 
@@ -158,15 +171,17 @@ async def admin_user(client, clean_database):
     # Update user to admin in database - use clean_database directly
     from bson import ObjectId
     
-    # Find user by username and update to admin
-    user_doc = await clean_database.users.find_one({"username": "adminuser"})
-    if user_doc:
-        await clean_database.users.update_one(
-            {"_id": ObjectId(user_doc["_id"])},
-            {"$set": {"subscription_plan": "admin"}}
-        )
+    # Find user by username and update to admin AND verify
+    result = await clean_database.users.update_one(
+        {"username": "adminuser"},
+        {"$set": {
+            "subscription_plan": "admin",
+            "is_verified": True
+        }}
+    )
+    assert result.modified_count == 1, "Failed to update user to admin"
     
-    # Login user
+    # Login user AFTER updating to admin to get correct token
     login_data = {
         "username_or_email": admin_data["username"],
         "password": admin_data["password"]
@@ -176,8 +191,18 @@ async def admin_user(client, clean_database):
     
     token_data = login_response.json()
     
+    # Verify the user is admin by getting current user info
+    headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+    user_response = await client.get("/api/v1/auth/me", headers=headers)
+    assert user_response.status_code == 200
+    user_info = user_response.json()
+    # Verify admin status
+    # print(f"DEBUG: User info after login: {user_info}")
+    # print(f"DEBUG: Subscription plan: {user_info.get('subscription_plan', 'NOT SET')}")
+    assert user_info["subscription_plan"] == "admin", f"User subscription plan is {user_info['subscription_plan']}, expected 'admin'"
+    
     return {
-        "user": register_response.json(),
+        "user": user_info,
         "token": token_data["access_token"],
-        "headers": {"Authorization": f"Bearer {token_data['access_token']}"}
+        "headers": headers
     }

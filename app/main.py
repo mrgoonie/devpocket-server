@@ -203,6 +203,9 @@ async def readiness_check():
         from app.core.database import db
 
         # Check database connection
+        if db.client is None:
+            raise Exception("Database client not initialized")
+            
         await db.client.admin.command("ping")
 
         return {"status": "ready", "checks": {"database": "healthy"}}

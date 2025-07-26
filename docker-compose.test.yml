@@ -10,7 +10,7 @@ services:
       - .:/app
       - test-coverage:/app/htmlcov
     environment:
-      - MONGODB_URL=mongodb://mongo-test:27017
+      - MONGODB_URL=mongodb://testuser:testpass@mongo-test:27017/?authSource=admin
       - DATABASE_NAME=devpocket_test
       - REDIS_URL=redis://redis-test:6379
       - ENVIRONMENT=test

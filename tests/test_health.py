@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient
 
 
+@pytest.mark.asyncio
 class TestHealthEndpoints:
     """Test health check endpoints."""
     

@@ -3,6 +3,7 @@ import json
 from httpx import AsyncClient
 
 
+@pytest.mark.asyncio
 class TestWebSocketEndpoints:
     """Test WebSocket endpoints."""
     
