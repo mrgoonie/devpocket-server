@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # Email settings
     RESEND_API_KEY: Optional[str] = None
-    EMAIL_FROM: str = "noreply@devpocket.sh"
+    EMAIL_FROM: str = "noreply@devpocket.app"
 
     # Logging settings
     LOG_LEVEL: str = "INFO"
