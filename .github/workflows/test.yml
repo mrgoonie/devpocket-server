@@ -187,11 +187,11 @@ jobs:
         format: 'sarif'
         output: 'trivy-results.sarif'
 
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
+    # - name: Upload Trivy scan results to GitHub Security tab
+    #   uses: github/codeql-action/upload-sarif@v3
+    #   if: always()
+    #   with:
+    #     sarif_file: 'trivy-results.sarif'
 
   build-test:
     runs-on: ubuntu-latest
@@ -214,14 +214,31 @@ jobs:
         docker run -d --name test-container \
           -e MONGODB_URL="mongodb://test:test@localhost:27017/test" \
           -e SECRET_KEY="test-secret-key" \
+          -e DATABASE_NAME="devpocket_test" \
+          -e ENVIRONMENT="test" \
           -p 8000:8000 \
           devpocket-api:test
 
-        # Wait for container to start
-        sleep 10
+        # Wait for container to start and become healthy
+        echo "Waiting for container to be healthy..."
+        timeout=30
+        counter=0
+        while [ $counter -lt $timeout ]; do
+          if docker exec test-container curl -f http://localhost:8000/health 2>/dev/null; then
+            echo "Container is healthy!"
+            break
+          fi
+          echo "Waiting for container... ($counter/$timeout)"
+          sleep 2
+          counter=$((counter + 2))
+        done
 
-        # Test health endpoint
-        docker exec test-container curl -f http://localhost:8000/health || exit 1
+        if [ $counter -ge $timeout ]; then
+          echo "Container failed to become healthy"
+          echo "Container logs:"
+          docker logs test-container
+          exit 1
+        fi
 
         # Cleanup
         docker stop test-container

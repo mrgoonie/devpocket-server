@@ -1,10 +1,13 @@
-name: Build and Test
+name: Docker Build Verification
 
 on:
-  push:
-    branches: [ main, dev/* ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+  # Only run on main branch after tests pass
+  workflow_run:
+    workflows: ["Test Suite"]
+    types:
+      - completed
+    branches: [main]
 
 env:
   REGISTRY: docker.io
@@ -15,6 +18,7 @@ jobs:
   test:
     name: Run Tests and Quality Checks
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
 
     steps:
     - name: Checkout code
