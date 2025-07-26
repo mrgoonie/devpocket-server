@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.5 (2025-07-26)
+
+### Bug Fixes
+
+- Resolve GitHub Actions workflow issues
+  ([`fcb3e91`](https://github.com/mrgoonie/devpocket-server/commit/fcb3e916d811963e2e55c5434224c19d2e29e523))
+
+- Fixed Docker image test failure by improving health check logic - Added proper timeout and retry
+  mechanism - Added required environment variables (DATABASE_NAME, ENVIRONMENT) - Improved error
+  logging to show container logs on failure
+
+- Fixed duplicate workflow runs - Renamed deploy.yml to "Docker Build Verification" - Changed
+  trigger to only run after "Test Suite" succeeds - Added workflow_dispatch for manual runs - This
+  prevents both workflows from running on the same push/PR events
+
+
 ## v0.1.0-dev.4 (2025-07-26)
 
 ### Bug Fixes
