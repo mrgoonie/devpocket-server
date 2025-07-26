@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.6 (2025-07-26)
+
+### Bug Fixes
+
+- Resolve Docker image test failure in GitHub Actions
+  ([`54ebe6d`](https://github.com/mrgoonie/devpocket-server/commit/54ebe6d2b8317a79a99307cf5e68f84b9d89de40))
+
+- Fixed Docker container failing to connect to MongoDB during startup - Updated test to use host
+  network mode to access MongoDB service - Added proper MongoDB connection string with
+  authentication - Added all required environment variables (DEBUG, GOOGLE_CLIENT_ID/SECRET) -
+  Increased timeout from 30s to 60s for container startup - Added test for /api/v1/info endpoint to
+  verify API functionality - Used curl directly instead of docker exec for health check
+
+The container was failing because it couldn't connect to MongoDB during the lifespan startup event.
+  Now it properly connects to the MongoDB service running in GitHub Actions.
+
+
 ## v0.1.0-dev.5 (2025-07-26)
 
 ### Bug Fixes
