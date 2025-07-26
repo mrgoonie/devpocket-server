@@ -94,6 +94,7 @@ class EnvironmentUpdate(BaseModel):
     name: Optional[str] = None
     resources: Optional[ResourceLimits] = None
     environment_variables: Optional[Dict[str, str]] = None
+    status: Optional[EnvironmentStatus] = None
 
 
 class EnvironmentInDB(BaseModel):

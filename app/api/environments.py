@@ -13,10 +13,7 @@ from app.models.environment import (
     EnvironmentStatus,
     EnvironmentUpdate,
 )
-from app.models.error_responses import (
-    get_crud_error_responses,
-    get_error_responses,
-)
+from app.models.error_responses import get_crud_error_responses, get_error_responses
 from app.models.user import UserInDB
 from app.services.environment_service import environment_service
 
@@ -219,7 +216,7 @@ async def get_environment(
     "/{environment_id}",
     response_model=EnvironmentResponse,
     summary="Update environment",
-    description="Update an environment's configuration (name, resources, environment variables)",
+    description="Update an environment's configuration (name, resources, environment variables, status)",
     responses={
         200: {"description": "Environment updated successfully"},
         **get_crud_error_responses(),

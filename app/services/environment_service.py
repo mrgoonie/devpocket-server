@@ -617,6 +617,32 @@ class EnvironmentService:
 
                 update_fields["resources"] = resources
 
+            if "status" in update_data and update_data["status"]:
+                # Validate status transition
+                new_status = update_data["status"]
+                current_status = environment.status
+                
+                # Define valid status transitions
+                valid_transitions = {
+                    EnvironmentStatus.CREATING: [EnvironmentStatus.RUNNING, EnvironmentStatus.ERROR],
+                    EnvironmentStatus.RUNNING: [EnvironmentStatus.STOPPED, EnvironmentStatus.ERROR, EnvironmentStatus.TERMINATED],
+                    EnvironmentStatus.STOPPED: [EnvironmentStatus.RUNNING, EnvironmentStatus.TERMINATED],
+                    EnvironmentStatus.ERROR: [EnvironmentStatus.RUNNING, EnvironmentStatus.TERMINATED],
+                    EnvironmentStatus.TERMINATED: [],  # Terminal state
+                }
+                
+                # Check if transition is valid
+                if new_status not in valid_transitions.get(current_status, []):
+                    logger.warning(
+                        f"Invalid status transition from {current_status} to {new_status} for environment {environment_id}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Cannot transition environment from {current_status} to {new_status}"
+                    )
+                
+                update_fields["status"] = new_status.value
+
             if (
                 "environment_variables" in update_data
                 and update_data["environment_variables"] is not None
