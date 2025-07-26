@@ -211,20 +211,24 @@ jobs:
     - name: Test Docker image
       run: |
         # Test that the image can start
+        # Use host network mode to access MongoDB service running in GitHub Actions
         docker run -d --name test-container \
-          -e MONGODB_URL="mongodb://test:test@localhost:27017/test" \
+          --network="host" \
+          -e MONGODB_URL="mongodb://root:testpassword@localhost:27017/?authSource=admin" \
           -e SECRET_KEY="test-secret-key" \
-          -e DATABASE_NAME="devpocket_test" \
+          -e DATABASE_NAME="devpocket_docker_test" \
           -e ENVIRONMENT="test" \
-          -p 8000:8000 \
+          -e DEBUG="True" \
+          -e GOOGLE_CLIENT_ID="fake-client-id" \
+          -e GOOGLE_CLIENT_SECRET="fake-client-secret" \
           devpocket-api:test
 
         # Wait for container to start and become healthy
         echo "Waiting for container to be healthy..."
-        timeout=30
+        timeout=60
         counter=0
         while [ $counter -lt $timeout ]; do
-          if docker exec test-container curl -f http://localhost:8000/health 2>/dev/null; then
+          if curl -f http://localhost:8000/health 2>/dev/null; then
             echo "Container is healthy!"
             break
           fi
@@ -239,6 +243,10 @@ jobs:
           docker logs test-container
           exit 1
         fi
+
+        # Test other endpoints
+        echo "Testing API info endpoint..."
+        curl -f http://localhost:8000/api/v1/info || exit 1
 
         # Cleanup
         docker stop test-container
