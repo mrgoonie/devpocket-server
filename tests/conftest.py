@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import asyncio
 from typing import AsyncGenerator
 from httpx import AsyncClient
@@ -21,7 +22,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def test_database():
     """Create test database connection."""
     # Use test database
@@ -49,8 +50,8 @@ async def test_database():
     client.close()
 
 
-@pytest.fixture
-async def client(test_database: Database) -> AsyncGenerator[AsyncClient, None]:
+@pytest_asyncio.fixture
+async def client(test_database: Database):
     """Create test client with test database."""
     
     # Override database dependency
@@ -66,7 +67,7 @@ async def client(test_database: Database) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def clean_database(test_database: Database):
     """Clean test database before each test."""
     # Drop all collections
@@ -82,7 +83,7 @@ async def clean_database(test_database: Database):
     await create_indexes()
     global_db.database = old_database
     
-    return test_database.database
+    yield test_database.database
     
 
 @pytest.fixture
@@ -105,8 +106,8 @@ def sample_login_data():
     }
 
 
-@pytest.fixture
-async def authenticated_user(client: AsyncClient, clean_database, sample_user_data):
+@pytest_asyncio.fixture
+async def authenticated_user(client, clean_database, sample_user_data):
     """Create and return authenticated user with token."""
     # Register user
     register_response = await client.post("/api/v1/auth/register", json=sample_user_data)
@@ -139,8 +140,8 @@ def sample_environment_data():
     }
 
 
-@pytest.fixture
-async def admin_user(client: AsyncClient, clean_database):
+@pytest_asyncio.fixture
+async def admin_user(client, clean_database):
     """Create and return authenticated admin user with token."""
     # Create admin user data
     admin_data = {
@@ -154,15 +155,13 @@ async def admin_user(client: AsyncClient, clean_database):
     register_response = await client.post("/api/v1/auth/register", json=admin_data)
     assert register_response.status_code == 201
     
-    # Update user to admin in database
-    from app.core.database import get_database
+    # Update user to admin in database - use clean_database directly
     from bson import ObjectId
-    db = await anext(get_database())
     
     # Find user by username and update to admin
-    user_doc = await db.users.find_one({"username": "adminuser"})
+    user_doc = await clean_database.users.find_one({"username": "adminuser"})
     if user_doc:
-        await db.users.update_one(
+        await clean_database.users.update_one(
             {"_id": ObjectId(user_doc["_id"])},
             {"$set": {"subscription_plan": "admin"}}
         )

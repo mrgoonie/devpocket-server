@@ -114,7 +114,7 @@ class AuthService:
             if user.locked_until and user.locked_until > datetime.utcnow():
                 logger.warning(f"Login attempt for locked account: {user.username}")
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    status_code=status.HTTP_423_LOCKED,
                     detail="Account is temporarily locked due to too many failed attempts",
                 )
 
