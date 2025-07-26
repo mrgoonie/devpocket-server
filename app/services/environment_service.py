@@ -622,10 +622,7 @@ class EnvironmentService:
         """Delete the actual container/pod (simulated)"""
         # Skip actual container deletion in test mode
         if IS_TEST_ENV:
-            # Remove from database immediately in test mode
-            from bson import ObjectId
-
-            await self.db.environments.delete_one({"_id": ObjectId(environment.id)})
+            # In test mode, just log the deletion but keep the environment with TERMINATED status
             logger.info(
                 f"Test mode: Simulated environment deletion for {environment.name}"
             )
