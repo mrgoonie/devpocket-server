@@ -10,8 +10,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URL=mongodb://mongo:27017
-      - DATABASE_NAME=devpocket
       - REDIS_URL=redis://redis:6379
       - ENVIRONMENT=development
       - DEBUG=true
@@ -19,7 +17,6 @@ services:
     env_file:
       - .env
     depends_on:
-      - mongo
       - redis
     networks:
       - devpocket-network
