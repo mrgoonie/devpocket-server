@@ -1,17 +1,17 @@
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import structlog
 from bson import ObjectId
 
 from app.constants import SYSTEM_USER_ID
-
 from app.models.template import (
+    TemplateCategory,
     TemplateCreate,
     TemplateInDB,
     TemplateResponse,
-    TemplateUpdate,
-    TemplateCategory,
     TemplateStatus,
+    TemplateUpdate,
 )
 
 logger = structlog.get_logger(__name__)

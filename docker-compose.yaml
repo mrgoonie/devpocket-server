@@ -1,7 +1,7 @@
 services:
   # DevPocket API Server
   devpocket-api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile
       platforms:

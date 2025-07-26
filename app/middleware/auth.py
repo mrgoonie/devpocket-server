@@ -1,12 +1,14 @@
-from fastapi import HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.core.security import verify_token
-from app.core.database import get_database
-from app.models.user import UserInDB
-from bson import ObjectId
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
 import structlog
+from bson import ObjectId
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.core.database import get_database
+from app.core.security import verify_token
+from app.models.user import UserInDB
 
 logger = structlog.get_logger(__name__)
 security = HTTPBearer()

@@ -1,23 +1,24 @@
 import asyncio
-import uuid
 import os
+import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from fastapi import HTTPException, status
+from typing import Any, Dict, List, Optional
+
 import structlog
+from fastapi import HTTPException, status
 
 from app.core.config import settings
+from app.models.cluster import ClusterRegion
 from app.models.environment import (
     EnvironmentCreate,
     EnvironmentInDB,
+    EnvironmentMetrics,
     EnvironmentStatus,
     EnvironmentTemplate,
     ResourceLimits,
     WebSocketSession,
-    EnvironmentMetrics,
 )
 from app.models.user import UserInDB
-from app.models.cluster import ClusterRegion
 
 logger = structlog.get_logger(__name__)
 
@@ -151,27 +152,35 @@ class EnvironmentService:
         """Create the actual container/pod in Kubernetes"""
         # Skip actual container creation in test mode
         if IS_TEST_ENV:
-            logger.info(f"Test mode: Simulating environment creation for {environment.name}")
+            logger.info(
+                f"Test mode: Simulating environment creation for {environment.name}"
+            )
             # Update status to running in test mode
             from bson import ObjectId
+
             await self.db.environments.update_one(
                 {"_id": ObjectId(environment.id)},
                 {"$set": {"status": EnvironmentStatus.RUNNING.value}},
             )
-            logger.info(f"Test mode: Simulated environment creation completed for {environment.name}")
+            logger.info(
+                f"Test mode: Simulated environment creation completed for {environment.name}"
+            )
             return
 
-        from app.services.cluster_service import cluster_service
-        import yaml
         import base64
-        import tempfile
         import os
+        import tempfile
+
+        import yaml
         from kubernetes import client, config as k8s_config
         from kubernetes.client.exceptions import ApiException
+
+        from app.services.cluster_service import cluster_service
 
         try:
             # Update status to creating
             from bson import ObjectId
+
             await self.db.environments.update_one(
                 {"_id": ObjectId(environment.id)},
                 {"$set": {"status": EnvironmentStatus.CREATING.value}},
@@ -208,6 +217,7 @@ class EnvironmentService:
 
                 # Disable SSL verification for testing (should be configured properly in production)
                 import ssl
+
                 from kubernetes.client.configuration import Configuration
 
                 config = Configuration.get_default_copy()
@@ -557,7 +567,7 @@ class EnvironmentService:
         try:
             logger.info(f"Looking for environment {env_id} for user {user_id}")
             from bson import ObjectId
-            
+
             # Convert string ID to ObjectId for database query
             env_doc = await self.db.environments.find_one(
                 {"_id": ObjectId(env_id), "user_id": user_id}
@@ -587,6 +597,7 @@ class EnvironmentService:
 
             # Update status to terminating
             from bson import ObjectId
+
             await self.db.environments.update_one(
                 {"_id": ObjectId(env_id)},
                 {"$set": {"status": EnvironmentStatus.TERMINATED.value}},
@@ -610,10 +621,13 @@ class EnvironmentService:
         if IS_TEST_ENV:
             # Remove from database immediately in test mode
             from bson import ObjectId
+
             await self.db.environments.delete_one({"_id": ObjectId(environment.id)})
-            logger.info(f"Test mode: Simulated environment deletion for {environment.name}")
+            logger.info(
+                f"Test mode: Simulated environment deletion for {environment.name}"
+            )
             return
-            
+
         try:
             # Simulate deletion time
             await asyncio.sleep(5)
@@ -626,6 +640,7 @@ class EnvironmentService:
 
             # Remove from database
             from bson import ObjectId
+
             await self.db.environments.delete_one({"_id": ObjectId(environment.id)})
 
             logger.info(f"Environment deleted successfully: {environment.name}")
@@ -650,8 +665,10 @@ class EnvironmentService:
 
             # Update status
             from bson import ObjectId
+
             await self.db.environments.update_one(
-                {"_id": ObjectId(env_id)}, {"$set": {"status": EnvironmentStatus.RUNNING.value}}
+                {"_id": ObjectId(env_id)},
+                {"$set": {"status": EnvironmentStatus.RUNNING.value}},
             )
 
             logger.info(f"Environment started: {environment.name}")
@@ -678,8 +695,10 @@ class EnvironmentService:
 
             # Update status
             from bson import ObjectId
+
             await self.db.environments.update_one(
-                {"_id": ObjectId(env_id)}, {"$set": {"status": EnvironmentStatus.STOPPED.value}}
+                {"_id": ObjectId(env_id)},
+                {"$set": {"status": EnvironmentStatus.STOPPED.value}},
             )
 
             logger.info(f"Environment stopped: {environment.name}")
@@ -703,7 +722,10 @@ class EnvironmentService:
 
             # Check if environment can be restarted
             # In test mode, allow restarting environments in any state
-            if not IS_TEST_ENV and environment.status not in [EnvironmentStatus.RUNNING, EnvironmentStatus.STOPPED]:
+            if not IS_TEST_ENV and environment.status not in [
+                EnvironmentStatus.RUNNING,
+                EnvironmentStatus.STOPPED,
+            ]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Environment in {environment.status} state cannot be restarted",
@@ -711,6 +733,7 @@ class EnvironmentService:
 
             # Update status to restarting
             from bson import ObjectId
+
             await self.db.environments.update_one(
                 {"_id": ObjectId(env_id)},
                 {"$set": {"status": EnvironmentStatus.CREATING.value}},
@@ -743,9 +766,11 @@ class EnvironmentService:
                     }
                 },
             )
-            logger.info(f"Test mode: Simulated environment restart for {environment.name}")
+            logger.info(
+                f"Test mode: Simulated environment restart for {environment.name}"
+            )
             return
-            
+
         try:
             # Simulate restart time
             await asyncio.sleep(10)
@@ -840,8 +865,9 @@ class EnvironmentService:
         since_timestamp: Optional[datetime] = None,
     ) -> List:
         """Generate simulated logs for demonstration"""
-        from app.models.template import LogEntry
         import random
+
+        from app.models.template import LogEntry
 
         # Base timestamp
         base_time = since_timestamp or datetime.utcnow()
@@ -912,6 +938,7 @@ class EnvironmentService:
 
         # Generate log entries
         from datetime import timedelta
+
         for i in range(min(lines, len(template_specific_logs))):
             # Properly handle timestamp increments using timedelta
             timestamp = base_time + timedelta(seconds=i)

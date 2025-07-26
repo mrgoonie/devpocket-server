@@ -5,7 +5,8 @@ This module defines reusable error response schemas that can be imported
 and used across all API endpoints to ensure consistent error documentation.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 

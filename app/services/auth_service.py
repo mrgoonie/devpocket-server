@@ -1,22 +1,23 @@
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+import httpx
+import structlog
+from bson import ObjectId
 from fastapi import HTTPException, status
 from google.auth.transport import requests
 from google.oauth2 import id_token
-import httpx
-import structlog
 
 from app.core.config import settings
+from app.core.database import get_database
 from app.core.security import (
-    get_password_hash,
-    verify_password,
     create_access_token,
     create_refresh_token,
+    get_password_hash,
+    verify_password,
     verify_token,
 )
-from app.core.database import get_database
-from app.models.user import UserCreate, UserInDB, UserLogin, Token, GoogleUserInfo
-from bson import ObjectId
+from app.models.user import GoogleUserInfo, Token, UserCreate, UserInDB, UserLogin
 
 logger = structlog.get_logger(__name__)
 

@@ -5,11 +5,11 @@ This middleware ensures that all API endpoints work with or without a trailing s
 by automatically redirecting requests to the canonical form (without trailing slash).
 """
 
+import structlog
 from fastapi import Request, Response
 from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
-import structlog
 
 logger = structlog.get_logger(__name__)
 

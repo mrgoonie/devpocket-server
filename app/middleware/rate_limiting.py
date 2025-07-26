@@ -1,10 +1,12 @@
-from fastapi import Request, HTTPException, status
+import os
+import time
+from typing import Dict, Optional
+
+import structlog
+from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Dict, Optional
-import time
-import structlog
-import os
+
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +35,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Skip rate limiting in test environment
         if self.is_test_env:
             return False
-            
+
         now = time.time()
 
         # Initialize client if not exists

@@ -1,24 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from typing import List, Optional
+
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from app.core.database import get_database
-from app.services.environment_service import environment_service
+from app.core.logging import audit_log
+from app.middleware.auth import get_current_user, get_current_verified_user
 from app.models.environment import (
     EnvironmentCreate,
+    EnvironmentMetrics,
     EnvironmentResponse,
     EnvironmentStatus,
     EnvironmentUpdate,
-    EnvironmentMetrics,
 )
-from app.models.user import UserInDB
 from app.models.error_responses import (
-    get_error_responses,
     get_auth_error_responses,
     get_crud_error_responses,
+    get_error_responses,
 )
-from app.middleware.auth import get_current_user, get_current_verified_user
-from app.core.logging import audit_log
+from app.models.user import UserInDB
+from app.services.environment_service import environment_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from typing import List, Optional
+
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from app.core.database import get_database
-from app.services.template_service import template_service
+from app.middleware.auth import get_current_admin_user, get_current_user
 from app.models.template import (
+    TemplateCategory,
     TemplateCreate,
     TemplateResponse,
-    TemplateUpdate,
-    TemplateCategory,
     TemplateStatus,
+    TemplateUpdate,
 )
 from app.models.user import UserInDB
-from app.middleware.auth import get_current_user, get_current_admin_user
+from app.services.template_service import template_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

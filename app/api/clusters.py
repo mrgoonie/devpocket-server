@@ -1,19 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
-import structlog
 
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.core.database import get_database
+from app.middleware.auth import get_current_active_user, require_admin
 from app.models.cluster import (
     ClusterCreate,
-    ClusterUpdate,
-    ClusterResponse,
-    ClusterRegion,
     ClusterHealthCheck,
+    ClusterRegion,
+    ClusterResponse,
+    ClusterUpdate,
 )
 from app.models.user import UserInDB
 from app.services.cluster_service import cluster_service
-from app.middleware.auth import get_current_active_user, require_admin
-from app.core.database import get_database
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = structlog.get_logger()
 

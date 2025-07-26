@@ -1,27 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
-from fastapi.security import HTTPBearer
 from typing import Any
+
 import structlog
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi.security import HTTPBearer
 
 from app.core.database import get_database
-from app.services.auth_service import auth_service
-from app.services.email_service import email_service
+from app.core.logging import audit_log
+from app.core.security import verify_token
+from app.middleware.auth import get_current_user
+from app.models.error_responses import (
+    get_auth_error_responses,
+    get_error_responses,
+    get_validation_error_responses,
+)
 from app.models.user import (
+    EmailVerificationRequest,
+    RefreshTokenRequest,
+    Token,
     UserCreate,
     UserLogin,
     UserResponse,
-    Token,
-    RefreshTokenRequest,
-    EmailVerificationRequest,
 )
-from app.models.error_responses import (
-    get_error_responses,
-    get_auth_error_responses,
-    get_validation_error_responses,
-)
-from app.middleware.auth import get_current_user
-from app.core.security import verify_token
-from app.core.logging import audit_log
+from app.services.auth_service import auth_service
+from app.services.email_service import email_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

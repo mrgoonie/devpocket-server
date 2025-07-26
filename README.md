@@ -220,7 +220,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "developer",
-    "email": "dev@example.com", 
+    "email": "dev@example.com",
     "password": "SecurePass123!",
     "full_name": "Developer User"
   }'
@@ -339,7 +339,7 @@ See [k8s/README.md](k8s/README.md) for detailed Kubernetes deployment guide.
    ```bash
    # Generate secure secret key
    python -c "import secrets; print(secrets.token_urlsafe(32))"
-   
+
    # Use environment variables for all secrets
    export SECRET_KEY="your-secure-key"
    export GOOGLE_CLIENT_SECRET="your-oauth-secret"
@@ -377,7 +377,7 @@ Structured logging with configurable formats:
 # JSON logging for production
 LOG_FORMAT=json
 
-# Console logging for development  
+# Console logging for development
 LOG_FORMAT=console
 ```
 
@@ -519,7 +519,7 @@ jobs:
           pip install pytest pytest-asyncio httpx
       - name: Run tests
         run: pytest
-  
+
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -570,7 +570,7 @@ jobs:
 ### Code Style
 
 - **Black** for code formatting
-- **Flake8** for linting  
+- **Flake8** for linting
 - **Type hints** for all functions
 - **Docstrings** for public methods
 - **Async/await** for I/O operations
@@ -612,7 +612,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
    ```bash
    # Check MongoDB status
    docker-compose logs mongo
-   
+
    # Verify connection string
    echo $MONGODB_URL
    ```
@@ -621,7 +621,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
    ```bash
    # Rebuild containers
    docker-compose build --no-cache
-   
+
    # Check Python path
    python -c "import sys; print(sys.path)"
    ```
@@ -630,7 +630,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
    ```bash
    # Check nginx configuration
    docker-compose logs nginx
-   
+
    # Verify WebSocket headers
    curl -H "Upgrade: websocket" http://localhost:8000/api/v1/ws/terminal/test
    ```

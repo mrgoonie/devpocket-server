@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial project setup with FastAPI backend
 - User authentication with JWT tokens
-- Google OAuth integration  
+- Google OAuth integration
 - Development environment management
 - WebSocket support for real-time terminal access
 - MongoDB database integration

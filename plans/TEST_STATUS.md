@@ -8,7 +8,7 @@ The **ObjectId migration is complete and functional**. All database models now p
 
 ### Completed Successfully:
 - **All Models Updated**: `UserInDB`, `EnvironmentInDB`, `WebSocketSession`, `ClusterInDB`, `TemplateInDB`, `EnvironmentMetrics` now use `PyObjectId`
-- **System User Support**: Created `SYSTEM_USER_ID` constant for system-created items  
+- **System User Support**: Created `SYSTEM_USER_ID` constant for system-created items
 - **Services Updated**: All services handle ObjectId conversion properly
 - **WebSocket Fixed**: Authentication converts user_id to ObjectId correctly
 - **Application Functional**: Server starts successfully, endpoints respond correctly

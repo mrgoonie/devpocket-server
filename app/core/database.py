@@ -1,7 +1,9 @@
+import logging
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.server_api import ServerApi
+
 from app.core.config import settings
-import logging
 
 logger = logging.getLogger(__name__)
 

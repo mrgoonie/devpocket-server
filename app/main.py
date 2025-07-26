@@ -1,19 +1,20 @@
+import time
+from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from contextlib import asynccontextmanager
-import time
-import structlog
 
+from app.api import auth, clusters, environments, templates, websocket
 from app.core.config import settings
-from app.core.database import connect_to_mongo, close_mongo_connection
+from app.core.database import close_mongo_connection, connect_to_mongo
 from app.core.logging import configure_logging
 from app.core.security import SecurityHeaders
 from app.middleware.rate_limiting import RateLimitMiddleware
 from app.middleware.slash_redirect import TrailingSlashRedirectMiddleware
-from app.api import auth, environments, websocket, clusters, templates
 
 # Configure logging
 logger = configure_logging()
@@ -45,17 +46,17 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="""
     **DevPocket API** - The mobile-first cloud IDE backend
-    
+
     ## Features
-    
+
     * **User Authentication** - JWT and Google OAuth support
     * **Environment Management** - Create, manage, and connect to development environments
     * **WebSocket Terminal** - Real-time terminal access to your environments
     * **Resource Monitoring** - Track CPU, memory, and storage usage
     * **Multi-tenant** - Secure isolation between users
-    
+
     ## Authentication
-    
+
     Most endpoints require authentication using JWT tokens. Include the token in the Authorization header:
     ```
     Authorization: Bearer <your-jwt-token>
@@ -205,7 +206,7 @@ async def readiness_check():
         # Check database connection
         if db.client is None:
             raise Exception("Database client not initialized")
-            
+
         await db.client.admin.command("ping")
 
         return {"status": "ready", "checks": {"database": "healthy"}}

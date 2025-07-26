@@ -1,6 +1,8 @@
 from typing import List, Optional
-import structlog
+
 import resend
+import structlog
+
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -35,7 +37,7 @@ class EmailService:
                 <p>Hi {username},</p>
                 <p>Thank you for signing up! Please verify your email address by clicking the link below:</p>
                 <p style="margin: 20px 0;">
-                    <a href="{verification_url}" 
+                    <a href="{verification_url}"
                        style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">
                         Verify Email Address
                     </a>
@@ -49,14 +51,14 @@ class EmailService:
 
             text_content = f"""
             Welcome to DevPocket!
-            
+
             Hi {username},
-            
+
             Thank you for signing up! Please verify your email address by visiting:
             {verification_url}
-            
+
             This verification link will expire in 24 hours.
-            
+
             Best regards,
             The DevPocket Team
             """
@@ -101,7 +103,7 @@ class EmailService:
                 <p>You requested to reset your password for your DevPocket account.</p>
                 <p>Click the link below to reset your password:</p>
                 <p style="margin: 20px 0;">
-                    <a href="{reset_url}" 
+                    <a href="{reset_url}"
                        style="background-color: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">
                         Reset Password
                     </a>
@@ -116,18 +118,18 @@ class EmailService:
 
             text_content = f"""
             Password Reset Request
-            
+
             Hi {username},
-            
+
             You requested to reset your password for your DevPocket account.
-            
+
             Visit this link to reset your password:
             {reset_url}
-            
+
             This reset link will expire in 1 hour.
-            
+
             If you didn't request this password reset, you can safely ignore this email.
-            
+
             Best regards,
             The DevPocket Team
             """
@@ -177,7 +179,7 @@ class EmailService:
                     <li>Sync your work across all devices</li>
                 </ul>
                 <p style="margin: 20px 0;">
-                    <a href="{dashboard_url}" 
+                    <a href="{dashboard_url}"
                        style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">
                         Go to Dashboard
                     </a>
@@ -189,23 +191,23 @@ class EmailService:
 
             text_content = f"""
             Welcome to DevPocket!
-            
+
             Hi {username},
-            
+
             Your email has been successfully verified! You're now ready to start using DevPocket.
-            
+
             DevPocket is your mobile-first cloud IDE that lets you code anywhere, anytime.
-            
+
             What you can do now:
             - Create development environments
             - Access a full terminal in your browser
             - Code with your favorite tools and languages
             - Sync your work across all devices
-            
+
             Visit your dashboard: {dashboard_url}
-            
+
             If you have any questions, feel free to reach out to us!
-            
+
             Happy coding!
             The DevPocket Team
             """

@@ -18,14 +18,14 @@ BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 if [[ "$BRANCH" == "main" ]]; then
     # Check if current commit is already tagged
     CURRENT_TAG=$(git describe --exact-match --tags HEAD 2>/dev/null || echo "")
-    
+
     if [[ -n "$CURRENT_TAG" ]]; then
         # Current commit is tagged, use the tag
         echo "${CURRENT_TAG#v}"
     else
         # Count commits since last tag
         COMMITS_SINCE_TAG=$(git rev-list ${LATEST_TAG}..HEAD --count)
-        
+
         if [[ $COMMITS_SINCE_TAG -gt 0 ]]; then
             # Parse version components
             VERSION=${LATEST_TAG#v}
@@ -33,7 +33,7 @@ if [[ "$BRANCH" == "main" ]]; then
             MAJOR=${VERSION_PARTS[0]}
             MINOR=${VERSION_PARTS[1]}
             PATCH=${VERSION_PARTS[2]}
-            
+
             # Auto-increment patch version
             PATCH=$((PATCH + 1))
             NEW_VERSION="$MAJOR.$MINOR.$PATCH"

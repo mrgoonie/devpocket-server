@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
+
 from bson import ObjectId
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
 from .cluster import ClusterRegion
 
 

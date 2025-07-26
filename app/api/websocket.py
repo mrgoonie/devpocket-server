@@ -1,24 +1,25 @@
-from fastapi import (
-    APIRouter,
-    WebSocket,
-    WebSocketDisconnect,
-    HTTPException,
-    Depends,
-    Query,
-)
-from fastapi.websockets import WebSocketState
 import asyncio
 import json
 import uuid
-import structlog
 from typing import Dict, Optional
 
+import structlog
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.websockets import WebSocketState
+
 from app.core.database import get_database
-from app.services.environment_service import environment_service
+from app.core.security import verify_token
 from app.middleware.auth import get_current_user
 from app.middleware.rate_limiting import websocket_rate_limiter
-from app.core.security import verify_token
 from app.models.user import UserInDB
+from app.services.environment_service import environment_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -94,6 +95,7 @@ async def authenticate_websocket(token: str, db) -> Optional[UserInDB]:
 
         # Get user from database
         from bson import ObjectId
+
         user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
         if user_doc is None:
             return None
@@ -234,7 +236,7 @@ async def websocket_terminal(
         try:
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
 
     finally:
@@ -331,7 +333,7 @@ async def websocket_logs(
         try:
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
     finally:
         if user:

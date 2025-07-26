@@ -51,9 +51,8 @@ jobs:
         REPOSITORY_USERNAME: __token__
         REPOSITORY_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        semantic-release version --print
-        semantic-release version --noop --print > /tmp/version_info.txt
-        if grep -q "No release will be made" /tmp/version_info.txt; then
+        # Check if release is needed using dry-run mode
+        if semantic-release version --dry-run --print | grep -q "No release will be made"; then
           echo "No release needed"
           echo "RELEASE_MADE=false" >> $GITHUB_ENV
         else
@@ -68,11 +67,11 @@ jobs:
         # Get the newly created version tag
         VERSION=$(git describe --tags --abbrev=0)
         echo "Building Docker image for version: $VERSION"
-        
+
         # Build and tag the Docker image
         docker build --platform linux/amd64 -t digitop/devpocket-api:$VERSION .
         docker tag digitop/devpocket-api:$VERSION digitop/devpocket-api:latest
-        
+
         # Optional: Add Docker Hub push here if needed
         # docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PAT }}
         # docker push digitop/devpocket-api:$VERSION
@@ -108,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [release]
     if: failure()
-    
+
     steps:
     - name: Notify failure
       run: |

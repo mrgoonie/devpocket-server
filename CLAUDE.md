@@ -152,7 +152,7 @@ semantic-release changelog --unreleased
 Follow [Conventional Commits](https://conventionalcommits.org/) for automatic version bumping:
 
 - `feat:` - New features (minor version bump)
-- `fix:` - Bug fixes (patch version bump)  
+- `fix:` - Bug fixes (patch version bump)
 - `perf:` - Performance improvements (patch version bump)
 - `BREAKING CHANGE:` - Breaking changes (major version bump)
 - `chore:`, `docs:`, `style:`, `refactor:`, `test:` - No version bump

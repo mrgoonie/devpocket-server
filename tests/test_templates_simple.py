@@ -1,10 +1,11 @@
 """Simple test to verify template endpoints work with ObjectId fixes."""
-import pytest
 import asyncio
+
+import pytest
 from httpx import AsyncClient
 
-from app.main import app
 from app.core.database import get_database
+from app.main import app
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ This script displays the default templates without requiring a database connecti
 
 Usage:
     python3 scripts/show_default_templates.py
-    
+
 Or run with production environment:
     ENV_FILE=.env.prod python3 scripts/show_default_templates.py
 """
@@ -15,9 +15,10 @@ import sys
 from pathlib import Path
 
 # Load environment variables first
-env_file = os.getenv('ENV_FILE', '.env')
+env_file = os.getenv("ENV_FILE", ".env")
 if Path(env_file).exists():
     from dotenv import load_dotenv
+
     load_dotenv(env_file)
 
 # Add project root to Python path
@@ -37,22 +38,18 @@ async def show_default_templates():
             "tags": ["python", "python3", "pip", "virtualenv", "flask", "django"],
             "docker_image": "python:3.11-slim",
             "default_port": 8080,
-            "default_resources": {
-                "cpu": "500m",
-                "memory": "1Gi",
-                "storage": "10Gi"
-            },
+            "default_resources": {"cpu": "500m", "memory": "1Gi", "storage": "10Gi"},
             "environment_variables": {
                 "PYTHONPATH": "/workspace",
-                "PIP_CACHE_DIR": "/tmp/pip-cache"
+                "PIP_CACHE_DIR": "/tmp/pip-cache",
             },
             "startup_commands": [
                 "pip install --upgrade pip",
                 "pip install flask fastapi uvicorn jupyter",
-                "mkdir -p /workspace"
+                "mkdir -p /workspace",
             ],
             "documentation_url": "https://docs.python.org/3/",
-            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg"
+            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg",
         },
         {
             "name": "nodejs",
@@ -62,22 +59,18 @@ async def show_default_templates():
             "tags": ["nodejs", "npm", "yarn", "express", "react", "vue", "javascript"],
             "docker_image": "node:18-slim",
             "default_port": 3000,
-            "default_resources": {
-                "cpu": "500m",
-                "memory": "1Gi",
-                "storage": "10Gi"
-            },
+            "default_resources": {"cpu": "500m", "memory": "1Gi", "storage": "10Gi"},
             "environment_variables": {
                 "NODE_ENV": "development",
-                "npm_config_cache": "/tmp/npm-cache"
+                "npm_config_cache": "/tmp/npm-cache",
             },
             "startup_commands": [
                 "npm install -g nodemon typescript @types/node",
                 "mkdir -p /workspace",
-                "cd /workspace"
+                "cd /workspace",
             ],
             "documentation_url": "https://nodejs.org/en/docs/",
-            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nodejs/nodejs-original.svg"
+            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nodejs/nodejs-original.svg",
         },
         {
             "name": "golang",
@@ -87,23 +80,19 @@ async def show_default_templates():
             "tags": ["go", "golang", "gin", "fiber", "gorilla"],
             "docker_image": "golang:1.21-alpine",
             "default_port": 8080,
-            "default_resources": {
-                "cpu": "500m",
-                "memory": "1Gi",
-                "storage": "10Gi"
-            },
+            "default_resources": {"cpu": "500m", "memory": "1Gi", "storage": "10Gi"},
             "environment_variables": {
                 "GOPATH": "/go",
                 "GOROOT": "/usr/local/go",
-                "PATH": "/usr/local/go/bin:/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                "PATH": "/usr/local/go/bin:/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             },
             "startup_commands": [
                 "go install github.com/air-verse/air@latest",
                 "go install github.com/cosmtrek/air@latest",
-                "mkdir -p /workspace"
+                "mkdir -p /workspace",
             ],
             "documentation_url": "https://golang.org/doc/",
-            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original.svg"
+            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original.svg",
         },
         {
             "name": "rust",
@@ -113,22 +102,18 @@ async def show_default_templates():
             "tags": ["rust", "cargo", "rustc", "actix", "tokio"],
             "docker_image": "rust:latest",
             "default_port": 8080,
-            "default_resources": {
-                "cpu": "1000m",
-                "memory": "2Gi",
-                "storage": "15Gi"
-            },
+            "default_resources": {"cpu": "1000m", "memory": "2Gi", "storage": "15Gi"},
             "environment_variables": {
                 "CARGO_HOME": "/usr/local/cargo",
-                "RUSTUP_HOME": "/usr/local/rustup"
+                "RUSTUP_HOME": "/usr/local/rustup",
             },
             "startup_commands": [
                 "rustup update",
                 "cargo install cargo-watch",
-                "mkdir -p /workspace"
+                "mkdir -p /workspace",
             ],
             "documentation_url": "https://doc.rust-lang.org/",
-            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/rust/rust-plain.svg"
+            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/rust/rust-plain.svg",
         },
         {
             "name": "ubuntu",
@@ -138,28 +123,24 @@ async def show_default_templates():
             "tags": ["ubuntu", "linux", "bash", "shell", "development"],
             "docker_image": "ubuntu:22.04",
             "default_port": 8080,
-            "default_resources": {
-                "cpu": "500m",
-                "memory": "1Gi",
-                "storage": "10Gi"
-            },
+            "default_resources": {"cpu": "500m", "memory": "1Gi", "storage": "10Gi"},
             "environment_variables": {
                 "DEBIAN_FRONTEND": "noninteractive",
-                "TERM": "xterm-256color"
+                "TERM": "xterm-256color",
             },
             "startup_commands": [
                 "apt-get update",
                 "apt-get install -y curl wget git vim nano build-essential",
-                "mkdir -p /workspace"
+                "mkdir -p /workspace",
             ],
             "documentation_url": "https://ubuntu.com/server/docs",
-            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ubuntu/ubuntu-plain.svg"
-        }
+            "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ubuntu/ubuntu-plain.svg",
+        },
     ]
-    
+
     print(f"Default Templates ({len(default_templates)}):")
     print("=" * 50)
-    
+
     for template in default_templates:
         print(f"\n📦 {template['name']}")
         print(f"   Display: {template['display_name']}")
@@ -169,24 +150,25 @@ async def show_default_templates():
         print(f"   Default Port: {template['default_port']}")
         print(f"   Resources: {template['default_resources']}")
         print(f"   Tags: {', '.join(template['tags'])}")
-        
-        if template.get('environment_variables'):
+
+        if template.get("environment_variables"):
             print(f"   Environment Variables:")
-            for key, value in template['environment_variables'].items():
+            for key, value in template["environment_variables"].items():
                 print(f"     {key}: {value}")
-        
-        if template.get('startup_commands'):
+
+        if template.get("startup_commands"):
             print(f"   Startup Commands:")
-            for cmd in template['startup_commands']:
+            for cmd in template["startup_commands"]:
                 print(f"     - {cmd}")
-        
-        if template.get('documentation_url'):
+
+        if template.get("documentation_url"):
             print(f"   Documentation: {template['documentation_url']}")
 
 
 def main():
     """Main script entry point"""
     import asyncio
+
     asyncio.run(show_default_templates())
 
 
