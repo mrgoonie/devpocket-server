@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import structlog
+from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.core.config import settings
@@ -586,6 +587,68 @@ class EnvironmentService:
         except Exception as e:
             logger.error(f"Error getting environment: {e}")
             return None
+
+    async def update_environment(
+        self, environment_id: str, user_id: str, update_data: dict
+    ) -> Optional[EnvironmentInDB]:
+        """Update an environment's configuration"""
+        logger.info(f"Updating environment {environment_id} for user {user_id}")
+
+        try:
+            # Find the environment and verify ownership
+            environment = await self.get_environment(environment_id, user_id)
+            if not environment:
+                return None
+
+            # Prepare update fields
+            update_fields = {"updated_at": datetime.utcnow()}
+
+            # Only update fields that are provided and valid
+            if "name" in update_data and update_data["name"]:
+                update_fields["name"] = update_data["name"]
+
+            if "resources" in update_data and update_data["resources"]:
+                # Validate resource limits based on user subscription
+                resources = update_data["resources"]
+                user = await self.db.users.find_one({"_id": ObjectId(user_id)})
+                if user:
+                    # TODO: Add resource limit validation based on user subscription
+                    pass
+
+                update_fields["resources"] = resources
+
+            if (
+                "environment_variables" in update_data
+                and update_data["environment_variables"] is not None
+            ):
+                update_fields["environment_variables"] = update_data[
+                    "environment_variables"
+                ]
+
+            # Update the environment in database
+            result = await self.db.environments.update_one(
+                {"_id": ObjectId(environment_id), "user_id": ObjectId(user_id)},
+                {"$set": update_fields},
+            )
+
+            if result.modified_count == 0:
+                logger.warning(f"No environment updated for {environment_id}")
+                return None
+
+            # Return updated environment
+            updated_environment = await self.db.environments.find_one(
+                {"_id": ObjectId(environment_id)}
+            )
+
+            if updated_environment:
+                updated_environment["_id"] = str(updated_environment["_id"])
+                return EnvironmentInDB(**updated_environment)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to update environment {environment_id}: {e}")
+            raise
 
     async def delete_environment(self, env_id: str, user_id: str) -> bool:
         """Delete an environment"""

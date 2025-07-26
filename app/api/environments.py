@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from app.core.database import get_database
 from app.core.logging import audit_log
-from app.middleware.auth import get_current_user, get_current_verified_user
+from app.middleware.auth import get_current_user
 from app.models.environment import (
     EnvironmentCreate,
     EnvironmentMetrics,
@@ -14,7 +14,6 @@ from app.models.environment import (
     EnvironmentUpdate,
 )
 from app.models.error_responses import (
-    get_auth_error_responses,
     get_crud_error_responses,
     get_error_responses,
 )
@@ -213,6 +212,74 @@ async def get_environment(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not retrieve environment",
+        )
+
+
+@router.put(
+    "/{environment_id}",
+    response_model=EnvironmentResponse,
+    summary="Update environment",
+    description="Update an environment's configuration (name, resources, environment variables)",
+    responses={
+        200: {"description": "Environment updated successfully"},
+        **get_crud_error_responses(),
+    },
+)
+async def update_environment(
+    environment_id: str = Path(..., description="Environment ID"),
+    update_data: EnvironmentUpdate = ...,
+    current_user: UserInDB = Depends(get_current_user),
+    db=Depends(get_database),
+):
+    """Update environment configuration"""
+    try:
+        environment_service.set_database(db)
+
+        # Convert EnvironmentUpdate to dict, excluding None values
+        update_dict = update_data.model_dump(exclude_none=True)
+
+        # Update environment
+        updated_environment = await environment_service.update_environment(
+            environment_id, str(current_user.id), update_dict
+        )
+
+        if not updated_environment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Environment not found"
+            )
+
+        # Audit log
+        audit_log(
+            action="environment_updated",
+            user_id=str(current_user.id),
+            details={
+                "environment_id": environment_id,
+                "updated_fields": list(update_dict.keys()),
+            },
+        )
+
+        return EnvironmentResponse(
+            id=str(updated_environment.id),
+            name=updated_environment.name,
+            template=updated_environment.template,
+            status=updated_environment.status,
+            resources=updated_environment.resources,
+            external_url=updated_environment.external_url,
+            web_port=updated_environment.web_port,
+            created_at=updated_environment.created_at,
+            last_accessed=updated_environment.last_accessed,
+            cpu_usage=updated_environment.cpu_usage,
+            memory_usage=updated_environment.memory_usage,
+            storage_usage=updated_environment.storage_usage,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Environment update error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not update environment",
         )
 
 

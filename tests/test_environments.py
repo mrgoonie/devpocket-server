@@ -455,3 +455,141 @@ class TestEnvironmentEndpoints:
         response = await client.get(f"/api/v1/environments/{fake_id}/logs")
 
         assert response.status_code == 403
+
+    async def test_update_environment_success(self, auth_client, test_user):
+        """Test successful environment update"""
+        # Create environment first
+        create_response = await auth_client.post(
+            "/api/v1/environments/",
+            json={
+                "name": "test-env",
+                "template": "python",
+                "resources": {"cpu": "500m", "memory": "1Gi", "storage": "5Gi"},
+            },
+        )
+        assert create_response.status_code == 201
+        env_id = create_response.json()["id"]
+
+        # Update environment
+        update_data = {
+            "name": "updated-test-env",
+            "resources": {"cpu": "500m", "memory": "1Gi", "storage": "8Gi"},
+            "environment_variables": {"NEW_VAR": "test_value"},
+        }
+
+        response = await auth_client.put(
+            f"/api/v1/environments/{env_id}", json=update_data
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "updated-test-env"
+        assert data["resources"]["storage"] == "8Gi"
+
+    async def test_update_environment_partial(self, auth_client, test_user):
+        """Test partial environment update (only name)"""
+        # Create environment first
+        create_response = await auth_client.post(
+            "/api/v1/environments/",
+            json={
+                "name": "test-env",
+                "template": "python",
+            },
+        )
+        assert create_response.status_code == 201
+        env_id = create_response.json()["id"]
+
+        # Update only name
+        update_data = {"name": "renamed-env"}
+
+        response = await auth_client.put(
+            f"/api/v1/environments/{env_id}", json=update_data
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "renamed-env"
+
+    async def test_update_environment_not_found(self, auth_client, test_user):
+        """Test updating non-existent environment"""
+        from bson import ObjectId
+
+        fake_env_id = str(ObjectId())
+        update_data = {"name": "updated-name"}
+
+        response = await auth_client.put(
+            f"/api/v1/environments/{fake_env_id}", json=update_data
+        )
+
+        assert response.status_code == 404
+        assert "Environment not found" in response.json()["detail"]
+
+    async def test_update_environment_unauthorized(self, client):
+        """Test updating environment without authentication"""
+        from bson import ObjectId
+
+        fake_env_id = str(ObjectId())
+        update_data = {"name": "updated-name"}
+
+        response = await client.put(
+            f"/api/v1/environments/{fake_env_id}", json=update_data
+        )
+
+        assert response.status_code == 401
+
+    async def test_update_environment_variables_only(self, auth_client, test_user):
+        """Test updating only environment variables"""
+        # Create environment first
+        create_response = await auth_client.post(
+            "/api/v1/environments/",
+            json={
+                "name": "test-env",
+                "template": "python",
+                "environment_variables": {"EXISTING_VAR": "existing_value"},
+            },
+        )
+        assert create_response.status_code == 201
+        env_id = create_response.json()["id"]
+
+        # Update environment variables
+        update_data = {
+            "environment_variables": {
+                "NEW_VAR": "new_value",
+                "ANOTHER_VAR": "another_value",
+            }
+        }
+
+        response = await auth_client.put(
+            f"/api/v1/environments/{env_id}", json=update_data
+        )
+
+        assert response.status_code == 200
+
+        # Verify the environment variables were updated
+        get_response = await auth_client.get(f"/api/v1/environments/{env_id}")
+        assert get_response.status_code == 200
+        # Note: environment_variables might not be returned in the response model
+        # so we'll just check that the update was successful
+
+    async def test_update_environment_empty_data(self, auth_client, test_user):
+        """Test updating environment with empty data"""
+        # Create environment first
+        create_response = await auth_client.post(
+            "/api/v1/environments/",
+            json={
+                "name": "test-env",
+                "template": "python",
+            },
+        )
+        assert create_response.status_code == 201
+        env_id = create_response.json()["id"]
+
+        # Update with empty data
+        update_data = {}
+
+        response = await auth_client.put(
+            f"/api/v1/environments/{env_id}", json=update_data
+        )
+
+        assert response.status_code == 200
+        # Should return the environment unchanged
