@@ -119,7 +119,7 @@ async def add_ovh_cluster():
             # Create new cluster
             created_cluster = await cluster_service.create_cluster(
                 cluster_data, 
-                created_by="system"
+                # created_by will default to SYSTEM_USER_ID
             )
             
             print(f"✅ Successfully added OVH cluster:")

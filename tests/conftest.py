@@ -31,10 +31,16 @@ async def test_database():
     # Create database instance
     database = Database()
     database.client = client
-    database.db = db
+    database.database = db
     
     # Create indexes
-    await database.create_indexes()
+    from app.core.database import create_indexes
+    # Temporarily override the global db for index creation
+    from app.core.database import db as global_db
+    old_database = global_db.database
+    global_db.database = db
+    await create_indexes()
+    global_db.database = old_database
     
     yield database
     
@@ -49,7 +55,7 @@ async def client(test_database: Database) -> AsyncGenerator[AsyncClient, None]:
     
     # Override database dependency
     async def get_test_database():
-        return test_database.db
+        return test_database.database
     
     app.dependency_overrides[get_database] = get_test_database
     
@@ -64,14 +70,19 @@ async def client(test_database: Database) -> AsyncGenerator[AsyncClient, None]:
 async def clean_database(test_database: Database):
     """Clean test database before each test."""
     # Drop all collections
-    collections = await test_database.db.list_collection_names()
+    collections = await test_database.database.list_collection_names()
     for collection_name in collections:
-        await test_database.db[collection_name].drop()
+        await test_database.database[collection_name].drop()
     
     # Recreate indexes
-    await test_database.create_indexes()
+    from app.core.database import create_indexes
+    from app.core.database import db as global_db
+    old_database = global_db.database
+    global_db.database = test_database.database
+    await create_indexes()
+    global_db.database = old_database
     
-    return test_database.db
+    return test_database.database
     
 
 @pytest.fixture
@@ -145,11 +156,16 @@ async def admin_user(client: AsyncClient, clean_database):
     
     # Update user to admin in database
     from app.core.database import get_database
+    from bson import ObjectId
     db = await anext(get_database())
-    await db.users.update_one(
-        {"username": "adminuser"},
-        {"$set": {"subscription_plan": "admin"}}
-    )
+    
+    # Find user by username and update to admin
+    user_doc = await db.users.find_one({"username": "adminuser"})
+    if user_doc:
+        await db.users.update_one(
+            {"_id": ObjectId(user_doc["_id"])},
+            {"$set": {"subscription_plan": "admin"}}
+        )
     
     # Login user
     login_data = {

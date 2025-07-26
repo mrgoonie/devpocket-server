@@ -1,6 +1,9 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import structlog
+from bson import ObjectId
+
+from app.constants import SYSTEM_USER_ID
 
 from app.models.template import (
     TemplateCreate,
@@ -180,7 +183,7 @@ class TemplateService:
                     "version": "1.0.0",
                     "created_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow(),
-                    "created_by": "system",
+                    "created_by": SYSTEM_USER_ID,
                     "usage_count": 0,
                 }
             )
@@ -293,7 +296,7 @@ class TemplateService:
         return None
 
     async def create_template(
-        self, template_data: TemplateCreate, created_by: str = "system"
+        self, template_data: TemplateCreate, created_by: str = None
     ) -> TemplateInDB:
         """Create a new template"""
         if self.db is None:
@@ -314,7 +317,7 @@ class TemplateService:
                 "version": "1.0.0",
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
-                "created_by": created_by,
+                "created_by": ObjectId(created_by) if created_by else SYSTEM_USER_ID,
                 "usage_count": 0,
             }
         )

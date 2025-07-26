@@ -68,7 +68,7 @@ class UserUpdate(BaseModel):
 
 
 class UserInDB(UserBase):
-    id: str = Field(alias="_id")
+    id: PyObjectId = Field(alias="_id")
     hashed_password: str
     is_active: bool = True
     is_verified: bool = False

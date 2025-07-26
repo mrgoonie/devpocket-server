@@ -2,6 +2,32 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, List
 from datetime import datetime
 from enum import Enum
+from bson import ObjectId
+
+
+class PyObjectId(ObjectId):
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type, handler):
+        from pydantic_core import core_schema
+
+        return core_schema.no_info_before_validator_function(
+            cls.validate,
+            core_schema.str_schema(),
+        )
+
+    @classmethod
+    def validate(cls, v):
+        if isinstance(v, ObjectId):
+            return str(v)
+        if isinstance(v, str):
+            if not ObjectId.is_valid(v):
+                raise ValueError("Invalid ObjectId")
+            return v
+        raise ValueError("ObjectId must be a valid ObjectId or string")
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, field_schema, handler):
+        field_schema.update(type="string")
 
 
 class TemplateCategory(str, Enum):
@@ -95,12 +121,12 @@ class TemplateUpdate(BaseModel):
 
 
 class TemplateInDB(TemplateBase):
-    id: str = Field(alias="_id")
+    id: PyObjectId = Field(alias="_id")
     status: TemplateStatus = TemplateStatus.ACTIVE
     version: str = "1.0.0"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    created_by: str = "system"
+    created_by: PyObjectId
     usage_count: int = 0
 
     class Config:

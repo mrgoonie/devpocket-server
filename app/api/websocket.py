@@ -93,7 +93,8 @@ async def authenticate_websocket(token: str, db) -> Optional[UserInDB]:
             return None
 
         # Get user from database
-        user_doc = await db.users.find_one({"_id": user_id})
+        from bson import ObjectId
+        user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
         if user_doc is None:
             return None
 

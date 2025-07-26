@@ -232,16 +232,4 @@ The application includes production-ready Docker configuration with:
 
 - always create/update `./plans/<FEATURE_NAME>_TASKS.md` to manage todos in every feature implementation/progress, update status of this file after finish each task
 - ask questions for clarification of uncleared requests
-- implement error catch handler and validation carefully
-- follow security best practices
-- focus on human-readable & developer-friendly when writing code
-- high standard of user experience
-- run app to check if it works, fix all issues if any
-- commit the code on the current branch after every task implemented (if it works)
-- Keep commits focused on the actual code changes
-- NEVER automatically add AI attribution signatures like:
-  "🤖 Generated with [Claude Code]"
-  "Co-Authored-By: Claude noreply@anthropic.com"
-  Any AI tool attribution or signature
-- Create clean, professional commit messages without AI references. Use conventional commit format.
-- use `context7` MCP tool for documentation during implementation
+- use `./scripts/run-tests.sh` to run tests after finish each task, make sure all of them pass

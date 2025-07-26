@@ -7,6 +7,9 @@ from cryptography.fernet import Fernet
 from kubernetes import client, config
 from kubernetes.config import ConfigException
 import structlog
+from bson import ObjectId
+
+from app.constants import SYSTEM_USER_ID
 
 from app.models.cluster import (
     ClusterCreate,
@@ -33,7 +36,7 @@ class ClusterService:
         self.db = database
 
     async def create_cluster(
-        self, cluster_data: ClusterCreate, created_by: str
+        self, cluster_data: ClusterCreate, created_by: str = None
     ) -> ClusterInDB:
         """Create a new cluster configuration"""
         if self.db is None:
@@ -81,7 +84,7 @@ class ClusterService:
                 "environments_count": 0,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
-                "created_by": created_by,
+                "created_by": ObjectId(created_by) if created_by else SYSTEM_USER_ID,
             }
         )
 

@@ -96,8 +96,8 @@ class EnvironmentUpdate(BaseModel):
 
 
 class EnvironmentInDB(BaseModel):
-    id: str = Field(alias="_id")
-    user_id: str
+    id: PyObjectId = Field(alias="_id")
+    user_id: PyObjectId
     name: str
     template: EnvironmentTemplate
     status: EnvironmentStatus = EnvironmentStatus.CREATING
@@ -147,9 +147,9 @@ class EnvironmentResponse(BaseModel):
 
 
 class WebSocketSession(BaseModel):
-    id: str = Field(alias="_id")
-    user_id: str
-    environment_id: str
+    id: PyObjectId = Field(alias="_id")
+    user_id: PyObjectId
+    environment_id: PyObjectId
     connection_id: str
     connected_at: datetime = Field(default_factory=datetime.utcnow)
     last_activity: datetime = Field(default_factory=datetime.utcnow)
@@ -161,7 +161,7 @@ class WebSocketSession(BaseModel):
 
 
 class EnvironmentMetrics(BaseModel):
-    environment_id: str
+    environment_id: PyObjectId
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     cpu_usage: float
     memory_usage: float

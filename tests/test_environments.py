@@ -203,9 +203,10 @@ class TestEnvironmentEndpoints:
         
         # Update environment status to running (simulating it's ready)
         from app.core.database import get_database
+        from bson import ObjectId
         db = await anext(get_database())
         await db.environments.update_one(
-            {"_id": env_id},
+            {"_id": ObjectId(env_id)},
             {"$set": {"status": "running"}}
         )
         

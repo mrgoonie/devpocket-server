@@ -77,13 +77,13 @@ class ClusterUpdate(BaseModel):
 
 
 class ClusterInDB(ClusterBase):
-    id: str = Field(alias="_id")
+    id: PyObjectId = Field(alias="_id")
     encrypted_kube_config: str = Field(..., description="Encrypted kubeconfig content")
     status: ClusterStatus = ClusterStatus.ACTIVE
     environments_count: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    created_by: str
+    created_by: PyObjectId
 
     class Config:
         populate_by_name = True
