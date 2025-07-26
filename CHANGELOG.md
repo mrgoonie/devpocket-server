@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.10 (2025-07-26)
+
+### Bug Fixes
+
+- Correct pre-commit flake8 configuration and update email domain
+  ([`d962f40`](https://github.com/mrgoonie/devpocket-server/commit/d962f404154334d861b80c5606ba3771cf68c3b8))
+
+- Fix flake8 args format in pre-commit config (quote arguments properly) - Fix isort and black args
+  format for consistency - Update email from domain from devpocket.sh to devpocket.app - Update
+  configuration to use correct domain for email services
+
+
 ## v0.1.0-dev.9 (2025-07-26)
 
 ### Features
