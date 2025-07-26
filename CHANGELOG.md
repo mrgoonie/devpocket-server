@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.3 (2025-07-26)
+
+### Bug Fixes
+
+- Update IS_TEST_ENV to check ENVIRONMENT variable for GitHub Actions
+  ([`a55e657`](https://github.com/mrgoonie/devpocket-server/commit/a55e6573cbf789521456f1d0fa8813dc516c50ce))
+
+The restart_environment tests were failing in GitHub Actions because IS_TEST_ENV only checked for
+  TESTING=true but the CI sets ENVIRONMENT=test. Updated the condition to check both variables to
+  properly detect test environment.
+
+This fixes the test failures: - test_restart_environment - test_restart_environment_invalid_state
+
+
 ## v0.1.0-dev.2 (2025-07-26)
 
 ### Bug Fixes
