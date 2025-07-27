@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.13 (2025-07-27)
+
+### Bug Fixes
+
+- Update WebSocket handler to use Kubernetes stream API for command execution
+  ([`d96ce3b`](https://github.com/mrgoonie/devpocket-server/commit/d96ce3b6cfe9eea1424bfbb839a2e286f9c9770e))
+
+- Import kubernetes stream module - Replace direct exec call with stream API - Properly read stdout
+  and stderr from command execution - Fix 'Bad Request' errors when executing commands - Remove
+  duplicate imports
+
+
 ## v0.1.0-dev.12 (2025-07-27)
 
 ### Bug Fixes
