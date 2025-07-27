@@ -1189,6 +1189,12 @@ class EnvironmentService:
         except Exception as e:
             logger.error(f"Error removing WebSocket session: {e}")
 
+    async def cleanup_websocket_session(
+        self, user_id: str, environment_id: str, connection_id: str
+    ):
+        """Clean up WebSocket session (alias for remove_websocket_session)"""
+        await self.remove_websocket_session(connection_id)
+
     async def record_metrics(self, env_id: str, metrics: EnvironmentMetrics):
         """Record environment metrics"""
         try:

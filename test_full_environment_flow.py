@@ -27,8 +27,8 @@ from kubernetes.client.exceptions import ApiException
 
 class EnvironmentFlowTest:
     def __init__(self):
-        self.api_base_url = "http://localhost:8000"
-        self.ws_base_url = "ws://localhost:8000"
+        self.api_base_url = "https://devpocket-api.goon.vn"
+        self.ws_base_url = "wss://devpocket-api.goon.vn"
         self.access_token: Optional[str] = None
         self.environment_id: Optional[str] = None
         self.test_env_name = f"test-env-{self.random_string(8)}"

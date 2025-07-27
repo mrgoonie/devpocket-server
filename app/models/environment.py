@@ -149,7 +149,7 @@ class EnvironmentResponse(BaseModel):
 
 
 class WebSocketSession(BaseModel):
-    id: PyObjectId = Field(alias="_id")
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
     user_id: PyObjectId
     environment_id: PyObjectId
     connection_id: str
