@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.16 (2025-07-27)
+
+### Features
+
+- Add sudo support test script for template verification
+  ([`a91ca9c`](https://github.com/mrgoonie/devpocket-server/commit/a91ca9c93a17bcb8e6d55788c01866988b3b94a7))
+
+- Create test script to verify sudo support in all templates - Display template configuration and
+  sudo capabilities - Provide Flutter app testing instructions - Help users verify PTY and sudo
+  functionality
+
+
 ## v0.1.0-dev.15 (2025-07-27)
 
 ### Bug Fixes
