@@ -549,6 +549,91 @@ class EnvironmentService:
                 },
             )
 
+    async def get_actual_pod_name(self, environment: EnvironmentInDB) -> Optional[str]:
+        """Get the actual pod name from Kubernetes using the deployment name"""
+        if IS_TEST_ENV:
+            return environment.pod_name  # In test mode, return the stored name
+
+        import base64
+        import os
+        import tempfile
+
+        from kubernetes import client, config as k8s_config
+        from kubernetes.client.exceptions import ApiException
+
+        from app.services.cluster_service import cluster_service
+
+        try:
+            # Get cluster configuration
+            cluster_service.set_database(self.db)
+            cluster = await cluster_service.get_cluster_by_region(
+                ClusterRegion.SOUTHEAST_ASIA
+            )
+            if not cluster:
+                logger.error("No active cluster found for Southeast Asia region")
+                return None
+
+            # Get decrypted kubeconfig
+            kubeconfig_content = await cluster_service.get_decrypted_kubeconfig(
+                cluster.id
+            )
+            if not kubeconfig_content:
+                logger.error("Failed to get kubeconfig for cluster")
+                return None
+
+            # Decode base64 kubeconfig
+            kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode("utf-8")
+
+            # Create temporary kubeconfig file
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False
+            ) as temp_kubeconfig:
+                temp_kubeconfig.write(kubeconfig_yaml)
+                kubeconfig_path = temp_kubeconfig.name
+
+            try:
+                # Load kubeconfig
+                k8s_config.load_kube_config(config_file=kubeconfig_path)
+
+                # Disable SSL verification for testing
+                from kubernetes.client.configuration import Configuration
+
+                config = Configuration.get_default_copy()
+                config.verify_ssl = False
+                config.ssl_ca_cert = None
+                Configuration.set_default(config)
+
+                # Initialize Kubernetes client
+                v1_core = client.CoreV1Api()
+
+                # Get pods for this deployment
+                label_selector = f"app=devpocket,environment={environment.pod_name}"
+                pods = v1_core.list_namespaced_pod(
+                    namespace=environment.namespace, label_selector=label_selector
+                )
+
+                if pods.items:
+                    # Return the first running pod
+                    for pod in pods.items:
+                        if pod.status.phase == "Running":
+                            return pod.metadata.name
+
+                    # If no running pods, return the first pod name
+                    return pods.items[0].metadata.name
+
+                return None
+
+            finally:
+                # Clean up temporary kubeconfig file
+                if os.path.exists(kubeconfig_path):
+                    os.unlink(kubeconfig_path)
+
+        except Exception as e:
+            logger.error(
+                f"Error getting actual pod name for environment {environment.id}: {e}"
+            )
+            return None
+
     async def get_user_environments(self, user_id: str) -> List[EnvironmentInDB]:
         """Get all environments for a user"""
         try:
@@ -621,16 +706,29 @@ class EnvironmentService:
                 # Validate status transition
                 new_status = update_data["status"]
                 current_status = environment.status
-                
+
                 # Define valid status transitions
                 valid_transitions = {
-                    EnvironmentStatus.CREATING: [EnvironmentStatus.RUNNING, EnvironmentStatus.ERROR],
-                    EnvironmentStatus.RUNNING: [EnvironmentStatus.STOPPED, EnvironmentStatus.ERROR, EnvironmentStatus.TERMINATED],
-                    EnvironmentStatus.STOPPED: [EnvironmentStatus.RUNNING, EnvironmentStatus.TERMINATED],
-                    EnvironmentStatus.ERROR: [EnvironmentStatus.RUNNING, EnvironmentStatus.TERMINATED],
+                    EnvironmentStatus.CREATING: [
+                        EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.ERROR,
+                    ],
+                    EnvironmentStatus.RUNNING: [
+                        EnvironmentStatus.STOPPED,
+                        EnvironmentStatus.ERROR,
+                        EnvironmentStatus.TERMINATED,
+                    ],
+                    EnvironmentStatus.STOPPED: [
+                        EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.TERMINATED,
+                    ],
+                    EnvironmentStatus.ERROR: [
+                        EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.TERMINATED,
+                    ],
                     EnvironmentStatus.TERMINATED: [],  # Terminal state
                 }
-                
+
                 # Check if transition is valid
                 if new_status not in valid_transitions.get(current_status, []):
                     logger.warning(
@@ -638,9 +736,9 @@ class EnvironmentService:
                     )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Cannot transition environment from {current_status} to {new_status}"
+                        detail=f"Cannot transition environment from {current_status} to {new_status}",
                     )
-                
+
                 update_fields["status"] = new_status.value
 
             if (

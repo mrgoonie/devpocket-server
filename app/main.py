@@ -93,15 +93,15 @@ async def add_process_time_header(request: Request, call_next):
 
 
 # Add trailing slash redirect middleware (should be early in the stack)
-app.add_middleware(TrailingSlashRedirectMiddleware)
+# app.add_middleware(TrailingSlashRedirectMiddleware)
 
 # Add rate limiting middleware
-app.add_middleware(RateLimitMiddleware, calls=100, period=60)  # 100 requests per minute
+# app.add_middleware(RateLimitMiddleware, calls=100, period=60)  # 100 requests per minute
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"],  # Allow all origins for testing
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
