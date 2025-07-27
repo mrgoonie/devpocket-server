@@ -4,6 +4,9 @@ from typing import Dict, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from kubernetes import client
+from kubernetes.client.rest import ApiException
+from kubernetes.stream import stream
 
 from app.core.database import get_database
 from app.core.security import verify_token
@@ -190,8 +193,7 @@ async def websocket_terminal(
         import os
         import tempfile
 
-        from kubernetes import client, config as k8s_config
-        from kubernetes.client.exceptions import ApiException
+        from kubernetes import config as k8s_config
 
         from app.services.cluster_service import cluster_service
 
@@ -266,8 +268,9 @@ async def websocket_terminal(
                         # Terminal input - execute command in pod
                         command = message.get("data", "")
                         try:
-                            # Execute command in pod using kubectl exec
-                            exec_response = v1_core.connect_get_namespaced_pod_exec(
+                            # Execute command in pod using kubernetes stream API
+                            exec_output = stream(
+                                v1_core.connect_get_namespaced_pod_exec,
                                 name=actual_pod_name,
                                 namespace=environment.namespace,
                                 container="devpocket-env",
@@ -276,12 +279,24 @@ async def websocket_terminal(
                                 stdin=False,
                                 stdout=True,
                                 tty=False,
+                                _preload_content=False,
                             )
+
+                            # Read the output
+                            output = ""
+                            while exec_output.is_open():
+                                exec_output.update(timeout=1)
+                                if exec_output.peek_stdout():
+                                    output += exec_output.read_stdout()
+                                if exec_output.peek_stderr():
+                                    output += exec_output.read_stderr()
+                                if not exec_output.is_open():
+                                    break
 
                             # Send command output back to client
                             response = {
                                 "type": "output",
-                                "data": f"$ {command}\n{exec_response}\n",
+                                "data": f"$ {command}\n{output}",
                             }
                             await connection_manager.send_personal_message(
                                 json.dumps(response), connection_id
