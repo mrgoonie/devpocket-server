@@ -69,8 +69,8 @@ class PTYSession:
                 "TERM": "xterm-256color",
                 "PS1": r"\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ ",
                 "SHELL": "/bin/bash",
-                "HOME": "/home/devuser",
-                "USER": "devuser",
+                "HOME": "/home/devpocket",
+                "USER": "devpocket",
                 "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             }
         )

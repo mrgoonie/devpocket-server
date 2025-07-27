@@ -229,7 +229,7 @@ async def websocket_terminal(
             environment_id,
             str(user.id),
             pty_output_callback,
-            shell_command="/bin/bash",
+            shell_command="su - devpocket",
         )
 
         if not pty_success:
