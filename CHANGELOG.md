@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.12 (2025-07-27)
+
+### Bug Fixes
+
+- Websocket session validation and add cleanup method
+  ([`6b16aca`](https://github.com/mrgoonie/devpocket-server/commit/6b16aca0e5c50db69c3389a266eb90039d3dc913))
+
+- Make WebSocketSession id field optional for creation - Add cleanup_websocket_session method to
+  environment service - Fix Pydantic validation error when creating WebSocket sessions
+
+
 ## v0.1.0-dev.11 (2025-07-27)
 
 ### Build System
