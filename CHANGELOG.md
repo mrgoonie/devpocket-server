@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.14 (2025-07-27)
+
+### Features
+
+- Implement PTY (pseudo-terminal) support for WebSocket terminal
+  ([`dcae7e3`](https://github.com/mrgoonie/devpocket-server/commit/dcae7e3af8d9384a423e6b52d25b22fb168acb0c))
+
+- Add PTYSession and PTYManager classes for full terminal emulation - Replace simple command
+  execution with interactive PTY sessions - Support ANSI escape sequences for colors and cursor
+  control - Enable interactive programs (vim, nano, htop, etc.) - Add terminal resize functionality
+  for responsive layouts - Implement proper session lifecycle management and cleanup - Update
+  WebSocket protocol to handle raw PTY data - Add comprehensive test coverage for PTY functionality
+  - Update Flutter documentation with xterm integration guide - Maintain backward compatibility with
+  existing terminal features
+
+The implementation provides a professional terminal experience with: - Real-time bidirectional
+  communication - Full terminal emulation capabilities - Proper resource management and cleanup -
+  Production-ready error handling
+
+
 ## v0.1.0-dev.13 (2025-07-27)
 
 ### Bug Fixes
