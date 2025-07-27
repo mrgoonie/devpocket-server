@@ -30,7 +30,7 @@ async def test_websocket_production():
 
     # Use existing environment ID (found in database)
     environment_id = "68850093852e1ff1492d3d87"
-    ws_url = f"wss://devpocket-api.goon.vn/api/v1/ws/terminal/{environment_id}?token={access_token}"
+    ws_url = f"wss://api.devpocket.app/api/v1/ws/terminal/{environment_id}?token={access_token}"
 
     try:
         print(f"   Connecting to: {ws_url[:80]}...")
