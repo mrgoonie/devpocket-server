@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.11 (2025-07-27)
+
+### Build System
+
+- **docker**: Update k8s deployment creation✅ Production API server is running on localhost:8000 in
+  development mode
+  ([`8274325`](https://github.com/mrgoonie/devpocket-server/commit/827432548b08cef32d306f46da288c945b2162cb))
+
+### Features
+
+- Implement comprehensive WebSocket terminal testing and debugging tools
+  ([`4fcb2aa`](https://github.com/mrgoonie/devpocket-server/commit/4fcb2aaae745b79c3412c06db3693320fb6f2d6e))
+
+- Add WebSocket terminal connection with real kubectl exec functionality - Implement environment
+  creation and Kubernetes pod management - Create comprehensive test suite for environment lifecycle
+  - Add debug tools for JWT token verification and database access - Fix WebSocket authentication
+  and authorization flow - Restore proper dependency injection and error handling - Add pod name
+  resolution between database and Kubernetes - Include ping/pong keepalive and message rate limiting
+
+
 ## v0.1.0-dev.10 (2025-07-26)
 
 ### Bug Fixes
