@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.15 (2025-07-27)
+
+### Bug Fixes
+
+- Add sudo support and proper user permissions to default templates
+  ([`3a03697`](https://github.com/mrgoonie/devpocket-server/commit/3a036971e04a3373bc9849187d60c372c2c742ec))
+
+- Update Ubuntu template with sudo access and devpocket user - Add sudo support to Python and
+  Node.js templates - Install essential packages and development tools - Create non-root user with
+  passwordless sudo privileges - Configure proper home directory and workspace setup - Add useful
+  shell aliases (ll for ls -la) - Update PTY service to use correct user (devpocket) - Set terminal
+  to start in user's workspace directory
+
+Templates now support: - sudo apt-get update/install for package management - Non-root user
+  environment with full sudo access - Proper file permissions and ownership - Development-friendly
+  shell configuration
+
+
 ## v0.1.0-dev.14 (2025-07-27)
 
 ### Features
