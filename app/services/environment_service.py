@@ -1184,6 +1184,16 @@ class EnvironmentService:
                 {"connection_id": connection_id}
             )
 
+            # Clean up associated PTY session if exists
+            pty_session_id = f"pty_{connection_id}"
+            try:
+                from app.services.pty_service import pty_manager
+
+                await pty_manager.close_session(pty_session_id)
+                logger.debug(f"PTY session cleaned up: {pty_session_id}")
+            except Exception as pty_error:
+                logger.debug(f"No PTY session to clean up or error: {pty_error}")
+
             logger.info(f"WebSocket session removed: {connection_id}")
 
         except Exception as e:

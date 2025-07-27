@@ -14,6 +14,7 @@ from app.middleware.rate_limiting import websocket_rate_limiter
 from app.models.cluster import ClusterRegion
 from app.models.user import UserInDB
 from app.services.environment_service import environment_service
+from app.services.pty_service import pty_manager
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -99,13 +100,16 @@ async def websocket_terminal(
     token: Optional[str] = Query(None),
     db=Depends(get_database),
 ):
-    """WebSocket endpoint for terminal access"""
-    logger.info(f"WebSocket handler called for environment: {environment_id}")
+    """WebSocket endpoint for PTY terminal access"""
+    logger.info(f"WebSocket PTY handler called for environment: {environment_id}")
     connection_id = str(uuid.uuid4())
     user = None
+    pty_session_id = None
 
     try:
-        logger.info(f"WebSocket terminal: Starting connection for env {environment_id}")
+        logger.info(
+            f"WebSocket terminal: Starting PTY connection for env {environment_id}"
+        )
 
         # Authenticate user
         logger.info(
@@ -148,17 +152,6 @@ async def websocket_terminal(
             return
         logger.info("WebSocket terminal: Environment is running")
 
-        # Get actual pod name from Kubernetes
-        logger.info("WebSocket terminal: Getting actual pod name")
-        actual_pod_name = await environment_service.get_actual_pod_name(environment)
-        if not actual_pod_name:
-            logger.error(
-                f"WebSocket terminal: Pod not found for environment {environment_id}"
-            )
-            await websocket.close(code=1008, reason="Pod not found")
-            return
-        logger.info(f"WebSocket terminal: Actual pod found: {actual_pod_name}")
-
         # Accept connection
         await connection_manager.connect(websocket, connection_id, str(user.id))
         websocket_rate_limiter.add_connection(str(user.id))
@@ -168,9 +161,7 @@ async def websocket_terminal(
             str(user.id), environment_id, connection_id
         )
 
-        logger.info(
-            f"Terminal WebSocket connected for environment {environment_id}, pod: {actual_pod_name}"
-        )
+        logger.info(f"Terminal WebSocket connected for environment {environment_id}")
 
         # Send welcome message
         welcome_msg = {
@@ -181,171 +172,144 @@ async def websocket_terminal(
                 "name": environment.name,
                 "template": environment.template.value,
                 "status": environment.status.value,
-                "pod_name": actual_pod_name,
+                "pty_enabled": True,
             },
         }
         await connection_manager.send_personal_message(
             json.dumps(welcome_msg), connection_id
         )
 
-        # Set up Kubernetes exec connection
-        import base64
-        import os
-        import tempfile
+        # Create PTY session
+        pty_session_id = f"pty_{connection_id}"
 
-        from kubernetes import config as k8s_config
+        def pty_output_callback(data: str):
+            """Callback for PTY output"""
+            try:
+                import asyncio
 
-        from app.services.cluster_service import cluster_service
+                # Create output message
+                output_msg = {
+                    "type": "output",
+                    "data": data,
+                }
 
-        # Get cluster configuration
-        cluster_service.set_database(db)
-        cluster = await cluster_service.get_cluster_by_region(
-            ClusterRegion.SOUTHEAST_ASIA
-        )
-        if not cluster:
-            await websocket.close(code=1008, reason="Cluster not available")
-            return
-
-        # Get decrypted kubeconfig
-        kubeconfig_content = await cluster_service.get_decrypted_kubeconfig(cluster.id)
-        if not kubeconfig_content:
-            await websocket.close(code=1008, reason="Kubeconfig not available")
-            return
-
-        # Decode base64 kubeconfig
-        kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode("utf-8")
-
-        # Create temporary kubeconfig file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as temp_kubeconfig:
-            temp_kubeconfig.write(kubeconfig_yaml)
-            kubeconfig_path = temp_kubeconfig.name
-
-        try:
-            # Load kubeconfig
-            k8s_config.load_kube_config(config_file=kubeconfig_path)
-
-            # Disable SSL verification for testing
-            from kubernetes.client.configuration import Configuration
-
-            config = Configuration.get_default_copy()
-            config.verify_ssl = False
-            config.ssl_ca_cert = None
-            Configuration.set_default(config)
-
-            # Initialize Kubernetes client
-            v1_core = client.CoreV1Api()
-
-            # Main message loop
-            while True:
+                # Get the current event loop from the main thread
                 try:
-                    # Receive message from client
-                    data = await websocket.receive_text()
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Schedule the coroutine to run in the event loop
+                        asyncio.create_task(
+                            connection_manager.send_personal_message(
+                                json.dumps(output_msg), connection_id
+                            )
+                        )
+                    else:
+                        # If no loop is running, run it
+                        loop.run_until_complete(
+                            connection_manager.send_personal_message(
+                                json.dumps(output_msg), connection_id
+                            )
+                        )
+                except RuntimeError:
+                    # No event loop available, create a new one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(
+                        connection_manager.send_personal_message(
+                            json.dumps(output_msg), connection_id
+                        )
+                    )
+                    loop.close()
+            except Exception as e:
+                logger.error(f"Error sending PTY output: {e}")
 
-                    # Check message rate limits
-                    if not websocket_rate_limiter.check_message_rate(str(user.id)):
+        # Start PTY session
+        pty_success = await pty_manager.create_session(
+            pty_session_id,
+            environment_id,
+            str(user.id),
+            pty_output_callback,
+            shell_command="/bin/bash",
+        )
+
+        if not pty_success:
+            logger.error(f"Failed to create PTY session for {environment_id}")
+            await websocket.close(code=1008, reason="Failed to create terminal session")
+            return
+
+        logger.info(f"PTY session created: {pty_session_id}")
+
+        # Main message loop
+        while True:
+            try:
+                # Receive message from client
+                data = await websocket.receive_text()
+
+                # Check message rate limits
+                if not websocket_rate_limiter.check_message_rate(str(user.id)):
+                    await connection_manager.send_personal_message(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "message": "Rate limit exceeded. Please slow down.",
+                            }
+                        ),
+                        connection_id,
+                    )
+                    continue
+
+                # Parse message
+                try:
+                    message = json.loads(data)
+                except json.JSONDecodeError:
+                    # Treat as raw terminal input
+                    message = {"type": "input", "data": data}
+
+                # Handle different message types
+                if message.get("type") == "input":
+                    # Terminal input - send to PTY
+                    input_data = message.get("data", "")
+                    success = await pty_manager.write_to_session(
+                        pty_session_id, input_data
+                    )
+
+                    if not success:
                         await connection_manager.send_personal_message(
                             json.dumps(
                                 {
                                     "type": "error",
-                                    "message": "Rate limit exceeded. Please slow down.",
+                                    "message": "Failed to send input to terminal",
                                 }
                             ),
                             connection_id,
                         )
-                        continue
 
-                    # Parse message
-                    try:
-                        message = json.loads(data)
-                    except json.JSONDecodeError:
-                        # Treat as raw terminal input
-                        message = {"type": "input", "data": data}
-
-                    # Handle different message types
-                    if message.get("type") == "input":
-                        # Terminal input - execute command in pod
-                        command = message.get("data", "")
-                        try:
-                            # Execute command in pod using kubernetes stream API
-                            exec_output = stream(
-                                v1_core.connect_get_namespaced_pod_exec,
-                                name=actual_pod_name,
-                                namespace=environment.namespace,
-                                container="devpocket-env",
-                                command=["/bin/bash", "-c", command],
-                                stderr=True,
-                                stdin=False,
-                                stdout=True,
-                                tty=False,
-                                _preload_content=False,
-                            )
-
-                            # Read the output
-                            output = ""
-                            while exec_output.is_open():
-                                exec_output.update(timeout=1)
-                                if exec_output.peek_stdout():
-                                    output += exec_output.read_stdout()
-                                if exec_output.peek_stderr():
-                                    output += exec_output.read_stderr()
-                                if not exec_output.is_open():
-                                    break
-
-                            # Send command output back to client
-                            response = {
-                                "type": "output",
-                                "data": f"$ {command}\n{output}",
-                            }
-                            await connection_manager.send_personal_message(
-                                json.dumps(response), connection_id
-                            )
-
-                        except ApiException as e:
-                            error_response = {
-                                "type": "output",
-                                "data": f"$ {command}\nError: {e.reason}\n",
-                            }
-                            await connection_manager.send_personal_message(
-                                json.dumps(error_response), connection_id
-                            )
-                        except Exception as e:
-                            error_response = {
-                                "type": "output",
-                                "data": f"$ {command}\nError: {str(e)}\n",
-                            }
-                            await connection_manager.send_personal_message(
-                                json.dumps(error_response), connection_id
-                            )
-
-                    elif message.get("type") == "ping":
-                        # Respond to ping
-                        pong_response = {"type": "pong"}
-                        await connection_manager.send_personal_message(
-                            json.dumps(pong_response), connection_id
-                        )
-
-                    elif message.get("type") == "resize":
-                        # Handle terminal resize (placeholder)
-                        logger.debug(f"Terminal resize: {message}")
-
-                except WebSocketDisconnect:
-                    logger.info(f"WebSocket client disconnected: {connection_id}")
-                    break
-                except Exception as e:
-                    logger.error(f"WebSocket message error: {e}")
+                elif message.get("type") == "ping":
+                    # Respond to ping
+                    pong_response = {"type": "pong"}
                     await connection_manager.send_personal_message(
-                        json.dumps(
-                            {"type": "error", "message": "Internal server error"}
-                        ),
-                        connection_id,
+                        json.dumps(pong_response), connection_id
                     )
 
-        finally:
-            # Clean up temporary kubeconfig file
-            if os.path.exists(kubeconfig_path):
-                os.unlink(kubeconfig_path)
+                elif message.get("type") == "resize":
+                    # Handle terminal resize
+                    cols = message.get("cols", 80)
+                    rows = message.get("rows", 24)
+
+                    success = await pty_manager.resize_session(
+                        pty_session_id, cols, rows
+                    )
+                    logger.debug(f"Terminal resize: {cols}x{rows}, success: {success}")
+
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket client disconnected: {connection_id}")
+                break
+            except Exception as e:
+                logger.error(f"WebSocket message error: {e}")
+                await connection_manager.send_personal_message(
+                    json.dumps({"type": "error", "message": "Internal server error"}),
+                    connection_id,
+                )
 
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
@@ -355,7 +319,15 @@ async def websocket_terminal(
             pass
 
     finally:
-        # Cleanup
+        # Cleanup PTY session
+        if pty_session_id:
+            try:
+                await pty_manager.close_session(pty_session_id)
+                logger.info(f"Cleaned up PTY session: {pty_session_id}")
+            except Exception as e:
+                logger.error(f"Error cleaning up PTY session: {e}")
+
+        # Cleanup WebSocket
         connection_manager.disconnect(connection_id, str(user.id) if user else "")
         if user:
             websocket_rate_limiter.remove_connection(str(user.id))
