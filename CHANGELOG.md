@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.18 (2025-07-29)
+
+### Bug Fixes
+
+- Update environment template validation to support new template names
+  ([`617e929`](https://github.com/mrgoonie/devpocket-server/commit/617e929028c50c5b3396f21e9e926d328a7fc7f3))
+
+- Update EnvironmentTemplate enum to use new template names (coding-agent, ubuntu, centos, debian,
+  nodejs, python) - Fix template-to-Docker-image mapping in environment service - Add
+  template-specific startup command integration with template service - Remove legacy template names
+  (golang, rust, custom) that were causing 422 validation errors - Ensure mobile app can create
+  environments with new template names without validation errors
+
+
 ## v0.1.0-dev.17 (2025-07-29)
 
 ### Bug Fixes
