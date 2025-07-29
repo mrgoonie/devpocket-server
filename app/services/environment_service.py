@@ -20,6 +20,7 @@ from app.models.environment import (
     WebSocketSession,
 )
 from app.models.user import UserInDB
+from app.services.template_service import template_service
 
 logger = structlog.get_logger(__name__)
 
@@ -128,15 +129,39 @@ class EnvironmentService:
     def _get_template_image(self, template: EnvironmentTemplate) -> str:
         """Get Docker image for environment template"""
         template_images = {
-            EnvironmentTemplate.PYTHON: "ubuntu:22.04",
-            EnvironmentTemplate.NODEJS: "ubuntu:22.04",
-            EnvironmentTemplate.GOLANG: "ubuntu:22.04",
+            EnvironmentTemplate.CODING_AGENT: "ubuntu:22.04",
             EnvironmentTemplate.UBUNTU: "ubuntu:22.04",
+            EnvironmentTemplate.CENTOS: "quay.io/centos/centos:stream9",
+            EnvironmentTemplate.DEBIAN: "debian:12",
+            EnvironmentTemplate.NODEJS: "node:18-slim",
+            EnvironmentTemplate.PYTHON: "python:3.11-slim",
         }
 
         return template_images.get(
             template, template_images[EnvironmentTemplate.UBUNTU]
         )
+
+    async def _get_template_startup_command(self, template: EnvironmentTemplate) -> str:
+        """Get startup command for environment template from template service"""
+        try:
+            # Set database for template service
+            template_service.set_database(self.db)
+
+            # Get template from database
+            template_data = await template_service.get_template_by_name(template.value)
+
+            if template_data and template_data.startup_commands:
+                # Join startup commands with &&
+                return (
+                    " && ".join(template_data.startup_commands) + " && sleep infinity"
+                )
+            else:
+                # Fallback to basic Ubuntu setup if template not found
+                return "apt-get update && apt-get install -y sudo curl wget git vim nano && useradd -m -s /bin/bash devpocket && echo 'devpocket:devpocket' | chpasswd && usermod -aG sudo devpocket && echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && mkdir -p /home/devpocket/workspace && chown -R devpocket:devpocket /home/devpocket && sleep infinity"
+        except Exception as e:
+            logger.error(f"Failed to get template startup command: {e}")
+            # Fallback to basic Ubuntu setup
+            return "apt-get update && apt-get install -y sudo curl wget git vim nano && useradd -m -s /bin/bash devpocket && echo 'devpocket:devpocket' | chpasswd && usermod -aG sudo devpocket && echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && mkdir -p /home/devpocket/workspace && chown -R devpocket:devpocket /home/devpocket && sleep infinity"
 
     def _double_resource(self, resource: str) -> str:
         """Double a resource value (e.g., '500m' -> '1000m', '1Gi' -> '2Gi')"""
@@ -182,6 +207,11 @@ class EnvironmentService:
         from app.services.cluster_service import cluster_service
 
         try:
+            # Get the template-specific startup command
+            startup_command = await self._get_template_startup_command(
+                environment.template
+            )
+
             # Update status to creating
             from bson import ObjectId
 
@@ -357,7 +387,7 @@ class EnvironmentService:
                                         command=["/bin/bash"],
                                         args=[
                                             "-c",
-                                            "apt-get update && apt-get install -y sudo && useradd -m -s /bin/bash devpocket && echo 'devpocket:devpocket' | chpasswd && usermod -aG sudo devpocket && echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && mkdir -p /home/devpocket/workspace && chown -R devpocket:devpocket /home/devpocket && ln -sf /home/devpocket/workspace /workspace && sleep infinity",
+                                            startup_command,
                                         ],
                                         ports=[
                                             client.V1ContainerPort(

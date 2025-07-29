@@ -40,12 +40,12 @@ class EnvironmentStatus(str, Enum):
 
 
 class EnvironmentTemplate(str, Enum):
-    PYTHON = "python"
-    NODEJS = "nodejs"
-    GOLANG = "golang"
-    RUST = "rust"
+    CODING_AGENT = "coding-agent"
     UBUNTU = "ubuntu"
-    CUSTOM = "custom"
+    CENTOS = "centos"
+    DEBIAN = "debian"
+    NODEJS = "nodejs"
+    PYTHON = "python"
 
 
 class ResourceLimits(BaseModel):
