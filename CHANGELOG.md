@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.17 (2025-07-29)
+
+### Bug Fixes
+
+- Add sudo support and proper user permissions to default templates
+  ([`0e59a98`](https://github.com/mrgoonie/devpocket-server/commit/0e59a98073c82f2f758ccebda40b5879f5c74153))
+
+- Update environment service to create 'devpocket' user with sudo privileges - Add sudo package
+  installation and configuration to all templates - Update Golang and Rust templates with proper
+  user setup - Ensure all templates have consistent sudo access for package installation - Add
+  verification script to check sudo support in templates
+
+
 ## v0.1.0-dev.16 (2025-07-27)
 
 ### Features
