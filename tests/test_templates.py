@@ -325,9 +325,13 @@ async def test_admin_can_initialize_templates(client: AsyncClient, admin_user):
     templates = list_response.json()
     template_names = [t["name"] for t in templates]
 
-    # Check for default templates
+    # Check for default templates - updated to match our new template set
+    assert "coding-agent" in template_names
     assert "python" in template_names
     assert "nodejs" in template_names
-    assert "golang" in template_names
-    assert "rust" in template_names
     assert "ubuntu" in template_names
+    assert "centos" in template_names
+    assert "debian" in template_names
+
+    # Verify we have exactly 6 templates
+    assert len(template_names) == 6

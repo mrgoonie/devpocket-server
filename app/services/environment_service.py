@@ -357,7 +357,7 @@ class EnvironmentService:
                                         command=["/bin/bash"],
                                         args=[
                                             "-c",
-                                            "useradd -m -s /bin/bash devuser && mkdir -p /home/devuser/workspace && ln -sf /home/devuser/workspace /workspace && sleep infinity",
+                                            "apt-get update && apt-get install -y sudo && useradd -m -s /bin/bash devpocket && echo 'devpocket:devpocket' | chpasswd && usermod -aG sudo devpocket && echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && mkdir -p /home/devpocket/workspace && chown -R devpocket:devpocket /home/devpocket && ln -sf /home/devpocket/workspace /workspace && sleep infinity",
                                         ],
                                         ports=[
                                             client.V1ContainerPort(
@@ -414,7 +414,7 @@ class EnvironmentService:
                                                 sub_path="opt",
                                             ),
                                         ],
-                                        working_dir="/home/devuser/workspace",
+                                        working_dir="/home/devpocket/workspace",
                                         # Allow root for initial setup
                                     )
                                 ],
