@@ -81,8 +81,28 @@ class EnvironmentService:
             env_dict["_id"] = str(result.inserted_id)
             environment = EnvironmentInDB(**env_dict)
 
-            # Create the actual container/pod (async)
-            asyncio.create_task(self._create_container(environment))
+            # Create the actual container/pod (with proper error handling)
+            try:
+                await self._create_container(environment)
+            except Exception as container_error:
+                # If container creation fails, update environment status to error
+                await self.db.environments.update_one(
+                    {"_id": result.inserted_id},
+                    {
+                        "$set": {
+                            "status": EnvironmentStatus.ERROR.value,
+                            "error_message": str(container_error),
+                            "updated_at": datetime.utcnow(),
+                        }
+                    },
+                )
+                logger.error(
+                    f"Container creation failed for environment {env_data.name}: {container_error}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Environment created but container setup failed: {str(container_error)}",
+                )
 
             logger.info(
                 f"Environment creation started: {env_data.name} for user {user.username}"
@@ -529,6 +549,101 @@ class EnvironmentService:
         # Fallback: return original if parsing fails
         return resource
 
+    async def _wait_for_pvc_ready(
+        self, v1_core, namespace: str, pvc_name: str, timeout: int = 300
+    ):
+        """Wait for PVC to be bound with timeout"""
+        import asyncio
+
+        from kubernetes.client.exceptions import ApiException
+
+        logger.info(f"Waiting for PVC {pvc_name} to be ready in namespace {namespace}")
+
+        start_time = asyncio.get_event_loop().time()
+        while True:
+            try:
+                pvc = v1_core.read_namespaced_persistent_volume_claim(
+                    name=pvc_name, namespace=namespace
+                )
+
+                if pvc.status.phase == "Bound":
+                    logger.info(f"PVC {pvc_name} is now bound and ready")
+                    return True
+
+                elif pvc.status.phase == "Lost":
+                    raise Exception(f"PVC {pvc_name} is in Lost state")
+
+                logger.debug(f"PVC {pvc_name} status: {pvc.status.phase}")
+
+            except ApiException as e:
+                if e.status == 404:
+                    raise Exception(f"PVC {pvc_name} not found")
+                else:
+                    raise Exception(f"Error checking PVC {pvc_name}: {e}")
+
+            # Check timeout
+            elapsed = asyncio.get_event_loop().time() - start_time
+            if elapsed > timeout:
+                raise Exception(
+                    f"Timeout waiting for PVC {pvc_name} to be ready after {timeout}s"
+                )
+
+            # Wait before next check
+            await asyncio.sleep(2)
+
+    async def _cleanup_failed_resources(
+        self, v1_core, v1_apps, environment: EnvironmentInDB, created_resources: dict
+    ):
+        """Clean up resources that were created before failure"""
+        cleanup_errors = []
+
+        logger.info(
+            f"Cleaning up failed resources for environment {environment.pod_name}"
+        )
+
+        # Clean up in reverse order of creation
+        if created_resources.get("service"):
+            try:
+                v1_core.delete_namespaced_service(
+                    name=environment.service_name, namespace=environment.namespace
+                )
+                logger.info(f"Cleaned up service: {environment.service_name}")
+            except Exception as e:
+                cleanup_errors.append(f"Failed to cleanup service: {e}")
+
+        if created_resources.get("deployment"):
+            try:
+                v1_apps.delete_namespaced_deployment(
+                    name=environment.pod_name, namespace=environment.namespace
+                )
+                logger.info(f"Cleaned up deployment: {environment.pod_name}")
+            except Exception as e:
+                cleanup_errors.append(f"Failed to cleanup deployment: {e}")
+
+        if created_resources.get("system_pvc"):
+            try:
+                v1_core.delete_namespaced_persistent_volume_claim(
+                    name=f"system-{environment.pod_name}",
+                    namespace=environment.namespace,
+                )
+                logger.info(f"Cleaned up system PVC: system-{environment.pod_name}")
+            except Exception as e:
+                cleanup_errors.append(f"Failed to cleanup system PVC: {e}")
+
+        if created_resources.get("home_pvc"):
+            try:
+                v1_core.delete_namespaced_persistent_volume_claim(
+                    name=f"home-{environment.pod_name}", namespace=environment.namespace
+                )
+                logger.info(f"Cleaned up home PVC: home-{environment.pod_name}")
+            except Exception as e:
+                cleanup_errors.append(f"Failed to cleanup home PVC: {e}")
+
+        if cleanup_errors:
+            logger.warning(
+                f"Some cleanup operations failed: {'; '.join(cleanup_errors)}"
+            )
+
     async def _create_container(self, environment: EnvironmentInDB):
         """Create the actual container/pod in Kubernetes"""
         # Skip actual container creation in test mode
@@ -558,7 +673,20 @@ class EnvironmentService:
 
         from app.services.cluster_service import cluster_service
 
+        # Track created resources for cleanup on failure
+        created_resources = {
+            "namespace": False,
+            "home_pvc": False,
+            "system_pvc": False,
+            "deployment": False,
+            "service": False,
+        }
+
         try:
+            logger.info(
+                f"Starting container creation for environment {environment.pod_name}"
+            )
+
             # Get the template-specific startup command
             startup_command = await self._get_template_startup_command(
                 environment.template
@@ -579,6 +707,10 @@ class EnvironmentService:
             )
             if not cluster:
                 raise Exception("No active cluster found for Southeast Asia region")
+
+            logger.info(
+                f"Using cluster {cluster.name} for environment {environment.pod_name}"
+            )
 
             # Get decrypted kubeconfig
             kubeconfig_content = await cluster_service.get_decrypted_kubeconfig(
@@ -615,6 +747,10 @@ class EnvironmentService:
                 v1_core = client.CoreV1Api()
                 v1_apps = client.AppsV1Api()
 
+                logger.info(
+                    f"Kubernetes clients initialized for environment {environment.pod_name}"
+                )
+
                 # Step 1: Create namespace if it doesn't exist
                 try:
                     v1_core.read_namespace(name=environment.namespace)
@@ -633,11 +769,16 @@ class EnvironmentService:
                             )
                         )
                         v1_core.create_namespace(body=namespace_manifest)
+                        created_resources["namespace"] = True
                         logger.info(f"Created namespace: {environment.namespace}")
                     else:
-                        raise
+                        raise Exception(
+                            f"Failed to check/create namespace {environment.namespace}: {e}"
+                        )
 
                 # Step 2: Create persistent volume claims for home and system directories
+                logger.info(f"Creating PVCs for environment {environment.pod_name}")
+
                 # Home directory PVC (contains user data, config, workspace)
                 home_pvc_manifest = client.V1PersistentVolumeClaim(
                     metadata=client.V1ObjectMeta(
@@ -685,6 +826,7 @@ class EnvironmentService:
                     v1_core.create_namespaced_persistent_volume_claim(
                         namespace=environment.namespace, body=home_pvc_manifest
                     )
+                    created_resources["home_pvc"] = True
                     logger.info(
                         f"Created home PVC for environment: {environment.pod_name}"
                     )
@@ -693,15 +835,40 @@ class EnvironmentService:
                     v1_core.create_namespaced_persistent_volume_claim(
                         namespace=environment.namespace, body=system_pvc_manifest
                     )
+                    created_resources["system_pvc"] = True
                     logger.info(
                         f"Created system PVC for environment: {environment.pod_name}"
                     )
 
                 except ApiException as e:
-                    if e.status != 409:  # Ignore if already exists
-                        raise
+                    if e.status == 409:  # Already exists
+                        logger.info(
+                            f"PVCs already exist for environment {environment.pod_name}"
+                        )
+                        created_resources["home_pvc"] = True
+                        created_resources["system_pvc"] = True
+                    else:
+                        raise Exception(f"Failed to create PVCs: {e}")
+
+                # Step 2.5: Wait for PVCs to be ready
+                logger.info(
+                    f"Waiting for PVCs to be ready for environment {environment.pod_name}"
+                )
+                await self._wait_for_pvc_ready(
+                    v1_core, environment.namespace, f"home-{environment.pod_name}"
+                )
+                await self._wait_for_pvc_ready(
+                    v1_core, environment.namespace, f"system-{environment.pod_name}"
+                )
+                logger.info(
+                    f"All PVCs are ready for environment {environment.pod_name}"
+                )
 
                 # Step 3: Create deployment
+                logger.info(
+                    f"Creating deployment for environment {environment.pod_name}"
+                )
+
                 deployment_manifest = client.V1Deployment(
                     metadata=client.V1ObjectMeta(
                         name=environment.pod_name,
@@ -851,9 +1018,12 @@ class EnvironmentService:
                 v1_apps.create_namespaced_deployment(
                     namespace=environment.namespace, body=deployment_manifest
                 )
+                created_resources["deployment"] = True
                 logger.info(f"Created deployment: {environment.pod_name}")
 
                 # Step 4: Create service
+                logger.info(f"Creating service for environment {environment.pod_name}")
+
                 service_manifest = client.V1Service(
                     metadata=client.V1ObjectMeta(
                         name=environment.service_name,
@@ -884,6 +1054,7 @@ class EnvironmentService:
                 v1_core.create_namespaced_service(
                     namespace=environment.namespace, body=service_manifest
                 )
+                created_resources["service"] = True
                 logger.info(f"Created service: {environment.service_name}")
 
                 # Update status to INSTALLING after pod creation
@@ -920,16 +1091,30 @@ class EnvironmentService:
                 f"Error creating container for environment {environment.id}: {e}"
             )
 
-            # Update status to error
+            # Clean up any resources that were created before the failure
+            try:
+                await self._cleanup_failed_resources(
+                    v1_core, v1_apps, environment, created_resources
+                )
+            except Exception as cleanup_error:
+                logger.error(
+                    f"Error during cleanup for environment {environment.id}: {cleanup_error}"
+                )
+
+            # Update status to error with detailed error message
             await self.db.environments.update_one(
                 {"_id": environment.id},
                 {
                     "$set": {
                         "status": EnvironmentStatus.ERROR.value,
+                        "error_message": str(e),
                         "updated_at": datetime.utcnow(),
                     }
                 },
             )
+
+            # Re-raise the exception so it can be handled by the caller
+            raise e
 
     async def get_actual_pod_name(self, environment: EnvironmentInDB) -> Optional[str]:
         """Get the actual pod name from Kubernetes using the deployment name"""
