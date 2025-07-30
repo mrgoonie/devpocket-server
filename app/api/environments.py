@@ -15,10 +15,15 @@ from app.models.environment import (
 )
 from app.models.error_responses import get_crud_error_responses, get_error_responses
 from app.models.user import UserInDB
-from app.services.environment_service import environment_service
+from app.services.environment_service import EnvironmentService, environment_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+
+def get_environment_service():
+    """Dependency to get environment service instance"""
+    return environment_service
 
 
 @router.post(
@@ -572,6 +577,45 @@ async def restart_environment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not restart environment",
         )
+
+
+@router.post("/environments/{environment_id}/recover")
+async def recover_environment(
+    environment_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+    environment_service: EnvironmentService = Depends(get_environment_service),
+):
+    """
+    Recover a failed environment by restarting initialization
+
+    This endpoint allows users to recover environments that failed during
+    package installation without losing their persistent data.
+    """
+    try:
+        # Verify environment belongs to user
+        environment = await environment_service.get_environment(
+            environment_id, current_user.id
+        )
+        if not environment:
+            raise HTTPException(status_code=404, detail="Environment not found")
+
+        # Attempt recovery
+        result = await environment_service.recover_environment(environment_id)
+
+        if result["success"]:
+            return {
+                "message": result["message"],
+                "environment_id": environment_id,
+                "status": result.get("status", "recovering"),
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in recover_environment endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Failed to recover environment")
 
 
 @router.get(

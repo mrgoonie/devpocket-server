@@ -143,7 +143,7 @@ class EnvironmentService:
         )
 
     async def _get_template_startup_command(self, template: EnvironmentTemplate) -> str:
-        """Get startup command for environment template from template service"""
+        """Get resilient startup command for environment template from template service"""
         try:
             # Set database for template service
             template_service.set_database(self.db)
@@ -152,17 +152,368 @@ class EnvironmentService:
             template_data = await template_service.get_template_by_name(template.value)
 
             if template_data and template_data.startup_commands:
-                # Join startup commands with &&
-                return (
-                    " && ".join(template_data.startup_commands) + " && sleep infinity"
+                return self._create_resilient_startup_script(
+                    template_data.startup_commands
                 )
             else:
                 # Fallback to basic Ubuntu setup if template not found
-                return "apt-get update && apt-get install -y sudo curl wget git vim nano && useradd -m -s /bin/bash devpocket && echo 'devpocket:devpocket' | chpasswd && usermod -aG sudo devpocket && echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && mkdir -p /home/devpocket/workspace && chown -R devpocket:devpocket /home/devpocket && sleep infinity"
+                basic_commands = [
+                    "apt-get update",
+                    "apt-get install -y sudo curl wget git vim nano",
+                    "useradd -m -s /bin/bash devpocket",
+                    "echo 'devpocket:devpocket' | chpasswd",
+                    "usermod -aG sudo devpocket",
+                    "echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
+                    "mkdir -p /home/devpocket/workspace",
+                    "chown -R devpocket:devpocket /home/devpocket",
+                ]
+                return self._create_resilient_startup_script(basic_commands)
         except Exception as e:
             logger.error(f"Failed to get template startup command: {e}")
-            # Fallback to basic Ubuntu setup
-            return "apt-get update && apt-get install -y sudo curl wget git vim nano && useradd -m -s /bin/bash devpocket && echo 'devpocket:devpocket' | chpasswd && usermod -aG sudo devpocket && echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && mkdir -p /home/devpocket/workspace && chown -R devpocket:devpocket /home/devpocket && sleep infinity"
+            # Fallback to basic Ubuntu setup with resilient script
+            basic_commands = [
+                "apt-get update",
+                "apt-get install -y sudo curl wget git vim nano",
+                "useradd -m -s /bin/bash devpocket",
+                "echo 'devpocket:devpocket' | chpasswd",
+                "usermod -aG sudo devpocket",
+                "echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
+                "mkdir -p /home/devpocket/workspace",
+                "chown -R devpocket:devpocket /home/devpocket",
+            ]
+            return self._create_resilient_startup_script(basic_commands)
+
+    def _create_resilient_startup_script(self, commands: List[str]) -> str:
+        """Create a resilient startup script that handles failures gracefully with enhanced error handling"""
+
+        # Separate critical commands (must succeed) from optional commands
+        critical_commands = []
+        optional_commands = []
+
+        for cmd in commands:
+            # Commands that are critical for basic container functionality
+            if any(
+                critical_pattern in cmd.lower()
+                for critical_pattern in [
+                    "useradd",
+                    "usermod",
+                    "mkdir -p /home",
+                    "chown",
+                    "passwd",
+                    "sudoers",
+                ]
+            ):
+                critical_commands.append(cmd)
+            else:
+                optional_commands.append(cmd)
+
+        # Create the resilient script
+        script_parts = [
+            "#!/bin/bash",
+            "set -e",  # Exit on error for critical commands only
+            "",
+            "# Initialize log file and status tracking",
+            "LOG_FILE=/var/log/devpocket-init.log",
+            "STATUS_FILE=/tmp/devpocket-status",
+            "PROGRESS_FILE=/tmp/devpocket-progress",
+            "echo '=== DevPocket Environment Initialization Started ===' | tee $LOG_FILE",
+            'echo "Timestamp: $(date)" | tee -a $LOG_FILE',
+            "echo 'INITIALIZING' > $STATUS_FILE",
+            "echo '0' > $PROGRESS_FILE",
+            "",
+            "# Function to update progress",
+            "update_progress() {",
+            '    echo "$1" > $PROGRESS_FILE',
+            '    echo "[PROGRESS] $1% - $2" | tee -a $LOG_FILE',
+            "}",
+            "",
+            "# Function to validate package availability before installation",
+            "validate_package() {",
+            '    local cmd="$1"',
+            '    if echo "$cmd" | grep -q "npm install.*@"; then',
+            "        # Extract npm package name",
+            "        local package=$(echo \"$cmd\" | sed -n 's/.*npm install[^@]*\\(@[^@]*\\/[^@]*\\).*/\\1/p')",
+            '        if [ -n "$package" ]; then',
+            '            echo "[VALIDATE] Checking npm package: $package" | tee -a $LOG_FILE',
+            '            if ! npm view "$package" version &>/dev/null; then',
+            '                echo "[VALIDATE] WARNING: npm package $package not found, skipping" | tee -a $LOG_FILE',
+            "                return 1",
+            "            fi",
+            "        fi",
+            '    elif echo "$cmd" | grep -q "pip.*install"; then',
+            "        # Extract pip package name (basic validation)",
+            "        local package=$(echo \"$cmd\" | sed -n 's/.*pip[0-9]\\? install[^a-zA-Z]*\\([a-zA-Z0-9_-]*\\).*/\\1/p')",
+            '        if [ -n "$package" ] && [ "$package" != "upgrade" ] && [ "$package" != "user" ]; then',
+            '            echo "[VALIDATE] Checking pip package: $package" | tee -a $LOG_FILE',
+            '            if ! python3 -m pip index versions "$package" &>/dev/null; then',
+            '                echo "[VALIDATE] WARNING: pip package $package might not be available, proceeding anyway" | tee -a $LOG_FILE',
+            "            fi",
+            "        fi",
+            "    fi",
+            "    return 0",
+            "}",
+            "",
+            "# Function to log and execute critical commands with retry",
+            "execute_critical() {",
+            "    local max_retries=3",
+            "    local retry_count=0",
+            '    local cmd="$1"',
+            "    ",
+            "    while [ $retry_count -lt $max_retries ]; do",
+            '        echo "[CRITICAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE',
+            '        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then',
+            '            echo "[CRITICAL] SUCCESS: $cmd" | tee -a $LOG_FILE',
+            "            return 0",
+            "        else",
+            "            retry_count=$((retry_count + 1))",
+            "            if [ $retry_count -lt $max_retries ]; then",
+            '                echo "[CRITICAL] RETRY: $cmd (attempt $retry_count failed, waiting 5s)" | tee -a $LOG_FILE',
+            "                sleep 5",
+            "            else",
+            '                echo "[CRITICAL] FAILED: $cmd (all $max_retries attempts failed)" | tee -a $LOG_FILE',
+            '                echo "[CRITICAL] Container initialization failed. Exiting." | tee -a $LOG_FILE',
+            "                echo 'ERROR' > $STATUS_FILE",
+            "                exit 1",
+            "            fi",
+            "        fi",
+            "    done",
+            "}",
+            "",
+            "# Function to log and execute optional commands with retry and validation",
+            "execute_optional() {",
+            "    local max_retries=2",
+            "    local retry_count=0",
+            '    local cmd="$1"',
+            "    ",
+            "    # Validate package availability first",
+            '    if ! validate_package "$cmd"; then',
+            '        echo "[OPTIONAL] SKIPPED: $cmd (package validation failed)" | tee -a $LOG_FILE',
+            "        return 1",
+            "    fi",
+            "    ",
+            "    while [ $retry_count -lt $max_retries ]; do",
+            '        echo "[OPTIONAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE',
+            '        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then',
+            '            echo "[OPTIONAL] SUCCESS: $cmd" | tee -a $LOG_FILE',
+            "            return 0",
+            "        else",
+            "            retry_count=$((retry_count + 1))",
+            "            if [ $retry_count -lt $max_retries ]; then",
+            '                echo "[OPTIONAL] RETRY: $cmd (attempt $retry_count failed, waiting 3s)" | tee -a $LOG_FILE',
+            "                sleep 3",
+            "            else",
+            '                echo "[OPTIONAL] FAILED: $cmd (all $max_retries attempts failed, continuing anyway)" | tee -a $LOG_FILE',
+            "                return 1",
+            "            fi",
+            "        fi",
+            "    done",
+            "}",
+            "",
+            "# Execute critical commands (must succeed)",
+            "echo '=== Executing Critical Setup Commands ===' | tee -a $LOG_FILE",
+            "update_progress 10 'Starting critical setup'",
+        ]
+
+        # Add critical commands with progress tracking
+        total_commands = len(critical_commands) + len(optional_commands)
+        critical_progress_increment = 40 / max(len(critical_commands), 1)
+        current_progress = 10
+
+        for i, cmd in enumerate(critical_commands):
+            script_parts.append(f"execute_critical '{cmd}'")
+            current_progress += critical_progress_increment
+            script_parts.append(
+                f"update_progress {int(current_progress)} 'Critical setup {i+1}/{len(critical_commands)} completed'"
+            )
+
+        # Add optional commands section
+        script_parts.extend(
+            [
+                "",
+                "# Execute optional commands (failures are logged but don't stop initialization)",
+                "echo '=== Executing Optional Setup Commands ===' | tee -a $LOG_FILE",
+                "update_progress 50 'Starting optional setup'",
+                "FAILED_COMMANDS=()",
+            ]
+        )
+
+        # Add optional commands with progress tracking
+        optional_progress_increment = 40 / max(len(optional_commands), 1)
+        current_progress = 50
+
+        for i, cmd in enumerate(optional_commands):
+            script_parts.extend(
+                [
+                    f"if ! execute_optional '{cmd}'; then",
+                    f"    FAILED_COMMANDS+=('{cmd}')",
+                    "fi",
+                ]
+            )
+            current_progress += optional_progress_increment
+            script_parts.append(
+                f"update_progress {int(current_progress)} 'Optional setup {i+1}/{len(optional_commands)} completed'"
+            )
+
+        # Add completion section
+        script_parts.extend(
+            [
+                "",
+                "# Report initialization status",
+                "update_progress 95 'Finalizing initialization'",
+                "echo '=== DevPocket Environment Initialization Completed ===' | tee -a $LOG_FILE",
+                'echo "Timestamp: $(date)" | tee -a $LOG_FILE',
+                "",
+                "if [ ${#FAILED_COMMANDS[@]} -gt 0 ]; then",
+                '    echo "[WARNING] Some optional commands failed:" | tee -a $LOG_FILE',
+                '    for failed_cmd in "${FAILED_COMMANDS[@]}"; do',
+                '        echo "  - $failed_cmd" | tee -a $LOG_FILE',
+                "    done",
+                '    echo "[INFO] Container is running despite these failures. Check logs for details." | tee -a $LOG_FILE',
+                "    echo 'READY_WITH_WARNINGS' > $STATUS_FILE",
+                "else",
+                '    echo "[SUCCESS] All commands executed successfully!" | tee -a $LOG_FILE',
+                "    echo 'READY' > $STATUS_FILE",
+                "fi",
+                "",
+                "# Create detailed status information for health checks",
+                "cat > /tmp/devpocket-health << EOF",
+                "{",
+                '  "status": "$(cat $STATUS_FILE)",',
+                '  "timestamp": "$(date -Iseconds)",',
+                '  "initialization_completed": true,',
+                '  "failed_commands": [$(printf \'"%s",\' "${FAILED_COMMANDS[@]}" | sed \'s/,$//\')]',
+                "}",
+                "EOF",
+                "",
+                "update_progress 100 'Container ready'",
+                "",
+                "# Keep container running",
+                "echo '=== Container Ready - Entering Sleep Mode ===' | tee -a $LOG_FILE",
+                "tail -f $LOG_FILE &",  # Keep log visible
+                "sleep infinity",
+            ]
+        )
+
+        # Join all parts and return as a single command
+        full_script = "\n".join(script_parts)
+        # Properly escape single quotes in the script content
+        escaped_script = full_script.replace("'", "'\\''")
+        return f"echo $'{escaped_script}' > /tmp/init.sh && chmod +x /tmp/init.sh && /tmp/init.sh"
+
+    async def recover_environment(self, environment_id: str) -> dict:
+        """Recover a failed environment by restarting initialization with enhanced tracking"""
+        try:
+            from bson import ObjectId
+
+            # Get environment
+            env_data = await self.db.environments.find_one(
+                {"_id": ObjectId(environment_id)}
+            )
+            if not env_data:
+                raise ValueError(f"Environment {environment_id} not found")
+
+            environment = EnvironmentInDB(**env_data)
+
+            # Check if environment is in ERROR or INSTALLING state
+            if environment.status not in [
+                EnvironmentStatus.ERROR,
+                EnvironmentStatus.INSTALLING,
+            ]:
+                return {
+                    "success": False,
+                    "message": f"Environment is in {environment.status} state, recovery not needed",
+                }
+
+            # Check recovery attempt limit to prevent infinite loops
+            recovery_attempt = environment.get("recovery_attempt", 0)
+            max_recovery_attempts = 5  # Maximum recovery attempts
+
+            if recovery_attempt >= max_recovery_attempts:
+                logger.warning(
+                    f"Environment {environment_id} has reached maximum recovery attempts ({max_recovery_attempts})"
+                )
+                return {
+                    "success": False,
+                    "message": f"Environment has reached maximum recovery attempts ({max_recovery_attempts}). Manual intervention required.",
+                }
+
+            # Check recovery cooldown to prevent rapid consecutive attempts
+            last_recovery = environment.get("last_recovery_attempt")
+            if last_recovery:
+                from datetime import datetime, timedelta
+
+                if isinstance(last_recovery, str):
+                    last_recovery = datetime.fromisoformat(
+                        last_recovery.replace("Z", "+00:00")
+                    )
+                elif hasattr(last_recovery, "replace"):
+                    # Handle MongoDB datetime format
+                    pass
+                else:
+                    last_recovery = datetime.utcnow() - timedelta(
+                        minutes=10
+                    )  # Default to allow recovery
+
+                cooldown_period = timedelta(minutes=5)  # 5-minute cooldown
+                if datetime.utcnow() - last_recovery < cooldown_period:
+                    remaining_time = cooldown_period - (
+                        datetime.utcnow() - last_recovery
+                    )
+                    return {
+                        "success": False,
+                        "message": f"Recovery cooldown active. Please wait {remaining_time.seconds // 60} minutes before retrying.",
+                    }
+
+            logger.info(
+                f"Starting recovery for environment {environment_id} (attempt {recovery_attempt + 1}/{max_recovery_attempts})"
+            )
+
+            # Update status to INSTALLING to retry with enhanced tracking
+            await self.db.environments.update_one(
+                {"_id": ObjectId(environment_id)},
+                {
+                    "$set": {
+                        "status": EnvironmentStatus.INSTALLING.value,
+                        "updated_at": datetime.utcnow(),
+                        "recovery_attempt": recovery_attempt + 1,
+                        "last_recovery_attempt": datetime.utcnow(),
+                        "recovery_reason": "User-initiated recovery",
+                    },
+                    "$unset": {"error_message": "", "installation_warnings": ""},
+                },
+            )
+
+            # Get cluster info
+            from app.services.cluster_service import cluster_service
+
+            cluster_service.set_database(self.db)
+            cluster = await cluster_service.get_cluster_by_region(
+                ClusterRegion.SOUTHEAST_ASIA
+            )
+
+            if not cluster:
+                raise Exception("No active cluster found for recovery")
+
+            # Start log streaming for recovery with enhanced error handling
+            asyncio.create_task(self._stream_installation_logs(environment, cluster.id))
+
+            # Log recovery attempt for monitoring
+            logger.info(
+                f"Recovery initiated for environment {environment_id}, attempt {recovery_attempt + 1}"
+            )
+
+            return {
+                "success": True,
+                "message": f"Environment recovery initiated (attempt {recovery_attempt + 1}/{max_recovery_attempts})",
+                "environment_id": environment_id,
+                "status": "installing",
+                "recovery_attempt": recovery_attempt + 1,
+                "max_attempts": max_recovery_attempts,
+            }
+
+        except Exception as e:
+            logger.error(f"Error recovering environment {environment_id}: {e}")
+            return {"success": False, "message": f"Recovery failed: {str(e)}"}
 
     def _double_resource(self, resource: str) -> str:
         """Double a resource value (e.g., '500m' -> '1000m', '1Gi' -> '2Gi')"""
@@ -446,6 +797,34 @@ class EnvironmentService:
                                             ),
                                         ],
                                         working_dir="/home/devpocket/workspace",
+                                        # Health checks to ensure container stays running
+                                        liveness_probe=client.V1Probe(
+                                            exec=client.V1ExecAction(
+                                                command=[
+                                                    "test",
+                                                    "-f",
+                                                    "/tmp/devpocket-status",
+                                                ]
+                                            ),
+                                            initial_delay_seconds=60,  # Give time for initialization
+                                            period_seconds=30,
+                                            timeout_seconds=5,
+                                            failure_threshold=3,
+                                        ),
+                                        readiness_probe=client.V1Probe(
+                                            exec=client.V1ExecAction(
+                                                command=[
+                                                    "grep",
+                                                    "-q",
+                                                    "READY",
+                                                    "/tmp/devpocket-status",
+                                                ]
+                                            ),
+                                            initial_delay_seconds=30,
+                                            period_seconds=10,
+                                            timeout_seconds=3,
+                                            failure_threshold=5,
+                                        ),
                                         # Allow root for initial setup
                                     )
                                 ],
@@ -1220,7 +1599,7 @@ class EnvironmentService:
     async def _stream_installation_logs(
         self, environment: EnvironmentInDB, cluster_id: str
     ):
-        """Stream pod logs during installation phase"""
+        """Stream pod logs during installation phase with enhanced error handling"""
         import json
 
         from app.api.websocket import connection_manager
@@ -1233,9 +1612,27 @@ class EnvironmentService:
             # Set up kubernetes log service
             kubernetes_log_service.set_database(self.db)
 
+            # Track installation status
+            has_warnings = False
+            failed_optional_commands = []
+
             # Callbacks for log streaming
             async def on_log_line(line: str):
-                """Send each log line to connected WebSocket clients"""
+                """Send each log line to connected WebSocket clients and analyze for status"""
+                nonlocal has_warnings, failed_optional_commands
+
+                # Detect optional command failures
+                if "[OPTIONAL] FAILED:" in line:
+                    has_warnings = True
+                    # Extract the failed command for reporting
+                    if "(" in line:
+                        failed_cmd = (
+                            line.split("FAILED: ")[1].split(" (")[0]
+                            if "FAILED: " in line
+                            else "unknown"
+                        )
+                        failed_optional_commands.append(failed_cmd)
+
                 message = {
                     "type": "installation_log",
                     "environment_id": str(environment.id),
@@ -1247,66 +1644,113 @@ class EnvironmentService:
                 )
 
             async def on_complete():
-                """Handle installation completion"""
+                """Handle installation completion with status detection"""
                 logger.info(f"Installation completed for environment {environment.id}")
+
+                # Determine final status based on initialization results
+                final_status = EnvironmentStatus.RUNNING.value
+                installation_status = "success"
+
+                if has_warnings:
+                    logger.warning(
+                        f"Environment {environment.id} completed with warnings: {failed_optional_commands}"
+                    )
+                    installation_status = (
+                        "partial"  # Running but with some failed packages
+                    )
 
                 # Update environment status to RUNNING and set installation_completed
                 external_url = f"https://env-{environment.pod_name}.devpocket.io"
                 internal_url = f"http://{environment.service_name}.{environment.namespace}.svc.cluster.local:8080"
 
+                update_data = {
+                    "status": final_status,
+                    "installation_completed": True,
+                    "internal_url": internal_url,
+                    "external_url": external_url,
+                    "web_port": 8080,
+                    "ssh_port": 22,
+                    "updated_at": datetime.utcnow(),
+                }
+
+                # Add warnings if present
+                if has_warnings:
+                    update_data["installation_warnings"] = failed_optional_commands
+                    update_data["installation_status"] = installation_status
+
                 await self.db.environments.update_one(
                     {"_id": environment.id},
-                    {
-                        "$set": {
-                            "status": EnvironmentStatus.RUNNING.value,
-                            "installation_completed": True,
-                            "internal_url": internal_url,
-                            "external_url": external_url,
-                            "web_port": 8080,
-                            "ssh_port": 22,
-                            "updated_at": datetime.utcnow(),
-                        }
-                    },
+                    {"$set": update_data},
                 )
 
-                # Send completion message
+                # Send completion message with status
                 completion_message = {
                     "type": "installation_complete",
                     "environment_id": str(environment.id),
                     "status": "running",
+                    "installation_status": installation_status,
                 }
+
+                if has_warnings:
+                    completion_message["warnings"] = failed_optional_commands
+                    completion_message[
+                        "message"
+                    ] = "Environment is running but some optional packages failed to install. Check logs for details."
+                else:
+                    completion_message[
+                        "message"
+                    ] = "Environment setup completed successfully!"
+
                 await connection_manager.send_user_message(
                     json.dumps(completion_message), environment.user_id
                 )
 
             async def on_error(error: str):
-                """Handle installation errors"""
+                """Handle critical installation errors (only for truly critical failures)"""
                 logger.error(
-                    f"Installation error for environment {environment.id}: {error}"
+                    f"Critical installation error for environment {environment.id}: {error}"
                 )
 
-                # Update status to ERROR
-                await self.db.environments.update_one(
-                    {"_id": environment.id},
-                    {
-                        "$set": {
-                            "status": EnvironmentStatus.ERROR.value,
-                            "updated_at": datetime.utcnow(),
-                        }
-                    },
+                # Only set to ERROR status if it's a critical failure (not optional package failures)
+                # Check if this is a critical failure or just optional command failures
+                is_critical_failure = not (
+                    "[OPTIONAL] FAILED:" in error or "WARNING" in error.upper()
                 )
 
-                # Send error message
-                error_message = {
-                    "type": "installation_error",
-                    "environment_id": str(environment.id),
-                    "error": error,
-                }
+                if is_critical_failure:
+                    # Update status to ERROR only for critical failures
+                    await self.db.environments.update_one(
+                        {"_id": environment.id},
+                        {
+                            "$set": {
+                                "status": EnvironmentStatus.ERROR.value,
+                                "updated_at": datetime.utcnow(),
+                                "error_message": error,
+                            }
+                        },
+                    )
+
+                    # Send error message
+                    error_message = {
+                        "type": "installation_error",
+                        "environment_id": str(environment.id),
+                        "error": error,
+                        "is_critical": True,
+                    }
+                else:
+                    # Non-critical error - treat as warning
+                    error_message = {
+                        "type": "installation_warning",
+                        "environment_id": str(environment.id),
+                        "warning": error,
+                        "is_critical": False,
+                    }
+
                 await connection_manager.send_user_message(
                     json.dumps(error_message), environment.user_id
                 )
 
-            # Stream logs from the pod
+            # Stream logs from the pod with updated completion patterns
             await kubernetes_log_service.stream_pod_logs(
                 namespace=environment.namespace,
                 pod_name=environment.pod_name,
@@ -1315,13 +1759,13 @@ class EnvironmentService:
                 on_log_line=on_log_line,
                 on_complete=on_complete,
                 on_error=on_error,
-                completion_pattern="sleep infinity",
-                timeout=600,  # 10 minutes timeout
+                completion_pattern="Container Ready - Entering Sleep Mode",  # Updated pattern
+                timeout=900,  # Increased to 15 minutes for more complex installations
             )
 
         except Exception as e:
             logger.error(f"Error in _stream_installation_logs: {e}")
-            # Try to update status to ERROR
+            # Try to update status to ERROR only if it's truly an error
             try:
                 await self.db.environments.update_one(
                     {"_id": environment.id},
@@ -1329,6 +1773,7 @@ class EnvironmentService:
                         "$set": {
                             "status": EnvironmentStatus.ERROR.value,
                             "updated_at": datetime.utcnow(),
+                            "error_message": str(e),
                         }
                     },
                 )

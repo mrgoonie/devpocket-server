@@ -100,3 +100,4 @@ k8s/kube_config_ovh.yaml
 *.tmp
 *.temp
 .cache/
+.serena/cache

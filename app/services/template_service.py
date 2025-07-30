@@ -72,7 +72,8 @@ class TemplateService:
                     # Install Claude Code
                     "su - devpocket -c 'curl -fsSL https://claude.ai/cli/install.sh | bash'",
                     # Install Gemini CLI (assuming npm package)
-                    "su - devpocket -c 'npm install -g @google/generative-ai-cli'",
+                    # Note: @google/generative-ai-cli package removed due to 404 errors
+                    # "su - devpocket -c 'npm install -g @google/generative-ai-cli'",
                     # Install Qwen Code (assuming it's available via pip)
                     "su - devpocket -c 'pip3 install --user qwencoder-cli'",
                     # Install Open Code (assuming VS Code CLI)
@@ -540,6 +541,262 @@ class TemplateService:
             if not existing:
                 await self.db.templates.insert_one(template_dict)
                 logger.info(f"Initialized default template: {template_dict['name']}")
+
+    async def validate_template_packages(self, template_data: dict) -> dict:
+        """Validate packages in template startup commands to prevent 404 errors"""
+        import asyncio
+        import re
+        from typing import Union
+
+        import httpx
+
+        validation_results = {
+            "valid": True,
+            "warnings": [],
+            "errors": [],
+            "validated_packages": [],
+        }
+
+        # Safely extract startup_commands with type checking
+        startup_commands_raw = template_data.get("startup_commands", [])
+
+        # Ensure startup_commands is a list of strings
+        startup_commands = []
+        if isinstance(startup_commands_raw, list):
+            for cmd in startup_commands_raw:
+                if isinstance(cmd, str):
+                    startup_commands.append(cmd)
+                elif isinstance(cmd, dict):
+                    # Handle case where command might be a dict with a 'command' field
+                    if "command" in cmd:
+                        startup_commands.append(str(cmd["command"]))
+                    else:
+                        logger.warning(f"Unexpected command format in template: {cmd}")
+                        validation_results["warnings"].append(
+                            f"Skipped non-string command: {type(cmd).__name__}"
+                        )
+                else:
+                    # Convert other types to string
+                    startup_commands.append(str(cmd))
+                    validation_results["warnings"].append(
+                        f"Converted {type(cmd).__name__} command to string"
+                    )
+        else:
+            logger.error(
+                f"startup_commands is not a list: {type(startup_commands_raw)}"
+            )
+            validation_results["errors"].append(
+                f"Invalid startup_commands format: expected list, got {type(startup_commands_raw).__name__}"
+            )
+            return validation_results
+
+        async def validate_npm_package(
+            package_name: str,
+        ) -> Dict[str, Union[bool, str]]:
+            """Validate npm package availability"""
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # Use npm registry API to check package
+                    url = f"https://registry.npmjs.org/{package_name}"
+                    response = await client.get(url)
+
+                    if response.status_code == 200:
+                        return {"valid": True, "package": package_name, "type": "npm"}
+                    elif response.status_code == 404:
+                        return {
+                            "valid": False,
+                            "package": package_name,
+                            "type": "npm",
+                            "error": "Package not found",
+                        }
+                    else:
+                        return {
+                            "valid": False,
+                            "package": package_name,
+                            "type": "npm",
+                            "error": f"HTTP {response.status_code}",
+                        }
+            except Exception as e:
+                return {
+                    "valid": False,
+                    "package": package_name,
+                    "type": "npm",
+                    "error": str(e),
+                }
+
+        async def validate_pip_package(
+            package_name: str,
+        ) -> Dict[str, Union[bool, str]]:
+            """Validate pip package availability"""
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # Use PyPI API to check package
+                    url = f"https://pypi.org/pypi/{package_name}/json"
+                    response = await client.get(url)
+
+                    if response.status_code == 200:
+                        return {"valid": True, "package": package_name, "type": "pip"}
+                    elif response.status_code == 404:
+                        return {
+                            "valid": False,
+                            "package": package_name,
+                            "type": "pip",
+                            "error": "Package not found",
+                        }
+                    else:
+                        return {
+                            "valid": False,
+                            "package": package_name,
+                            "type": "pip",
+                            "error": f"HTTP {response.status_code}",
+                        }
+            except Exception as e:
+                return {
+                    "valid": False,
+                    "package": package_name,
+                    "type": "pip",
+                    "error": str(e),
+                }
+
+        # Extract package names from commands
+        npm_packages = []
+        pip_packages = []
+
+        for cmd in startup_commands:
+            try:
+                # Ensure cmd is a string
+                cmd_str = str(cmd)
+
+                # Extract npm packages - improved regex pattern
+                npm_pattern = r"npm\s+install\s+(?:-g\s+)?(?:--global\s+)?((?:[^\s'\"]+(?:\s+[^\s'\"]+)*)*)"
+                npm_matches = re.findall(npm_pattern, cmd_str)
+                for match in npm_matches:
+                    # Split multiple packages and filter out flags
+                    packages = match.split()
+                    for package in packages:
+                        package = package.strip("'\" ")
+                        if (
+                            package
+                            and not package.startswith("-")
+                            and package not in ["install", "-g", "--global", "npm"]
+                        ):
+                            npm_packages.append(package)
+
+                # Extract pip packages - improved regex pattern
+                pip_pattern = r"pip(?:[0-9])?(?:\.exe)?\s+install\s+(?:--[^\s]+\s+)*((?:[^\s'\"]+(?:\s+[^\s'\"]+)*)*)"
+                pip_matches = re.findall(pip_pattern, cmd_str)
+                for match in pip_matches:
+                    # Split multiple packages and filter out flags
+                    packages = match.split()
+                    for package in packages:
+                        package = package.strip("'\" ")
+                        if (
+                            package
+                            and not package.startswith("-")
+                            and package
+                            not in ["install", "upgrade", "user", "pip", "pip3"]
+                        ):
+                            pip_packages.append(package)
+
+            except Exception as e:
+                logger.warning(f"Error parsing command '{cmd}': {e}")
+                validation_results["warnings"].append(
+                    f"Error parsing command: {str(e)}"
+                )
+                continue
+
+        # Remove duplicates while preserving order
+        npm_packages = list(dict.fromkeys(npm_packages))
+        pip_packages = list(dict.fromkeys(pip_packages))
+
+        logger.info(f"Extracted packages - NPM: {npm_packages}, PIP: {pip_packages}")
+
+        # Validate packages concurrently
+        validation_tasks = []
+
+        for package in npm_packages:
+            validation_tasks.append(validate_npm_package(package))
+
+        for package in pip_packages:
+            validation_tasks.append(validate_pip_package(package))
+
+        if validation_tasks:
+            try:
+                results = await asyncio.gather(
+                    *validation_tasks, return_exceptions=True
+                )
+
+                for result in results:
+                    if isinstance(result, Exception):
+                        validation_results["warnings"].append(
+                            f"Validation error: {str(result)}"
+                        )
+                        continue
+
+                    validation_results["validated_packages"].append(result)
+
+                    if not result["valid"]:
+                        validation_results["valid"] = False
+                        error_msg = f"{result['type'].upper()} package '{result['package']}': {result['error']}"
+                        validation_results["errors"].append(error_msg)
+                        logger.warning(f"Template validation failed: {error_msg}")
+
+            except Exception as e:
+                logger.error(f"Error during package validation: {e}")
+                validation_results["warnings"].append(
+                    f"Validation process error: {str(e)}"
+                )
+
+        return validation_results
+
+    async def get_validated_default_templates(self) -> List[dict]:
+        """Get default templates with package validation"""
+        templates = await self.get_default_templates()
+        validated_templates = []
+
+        for template in templates:
+            logger.info(f"Validating template: {template['name']}")
+            validation_result = await self.validate_template_packages(template)
+
+            # Add validation metadata to template
+            template["validation"] = {
+                "validated_at": datetime.utcnow(),
+                "is_valid": validation_result["valid"],
+                "warnings": validation_result["warnings"],
+                "errors": validation_result["errors"],
+                "validated_packages": validation_result["validated_packages"],
+            }
+
+            # Filter out invalid packages from startup_commands if needed
+            if not validation_result["valid"]:
+                logger.warning(
+                    f"Template '{template['name']}' has package validation issues"
+                )
+                template["status"] = (
+                    TemplateStatus.INACTIVE
+                    if len(validation_result["errors"]) > 2
+                    else TemplateStatus.ACTIVE
+                )
+
+                # Optionally remove commands with invalid packages
+                filtered_commands = []
+                for cmd in template["startup_commands"]:
+                    should_include = True
+                    for error in validation_result["errors"]:
+                        if "not found" in error and any(
+                            pkg in cmd for pkg in [error.split("'")[1]] if "'" in error
+                        ):
+                            should_include = False
+                            logger.info(f"Removing problematic command: {cmd}")
+                            break
+                    if should_include:
+                        filtered_commands.append(cmd)
+
+                template["startup_commands"] = filtered_commands
+
+            validated_templates.append(template)
+
+        return validated_templates
 
 
 # Global instance
