@@ -1,5 +1,5 @@
 import asyncio
-from typing import AsyncGenerator
+import os
 
 import pytest
 import pytest_asyncio
@@ -10,6 +10,9 @@ from app.core.config import settings
 from app.core.database import Database, get_database
 from app.main import app
 from app.services.template_service import template_service
+
+# Ensure test environment is detected
+os.environ["TESTING"] = "true"
 
 # Test database configuration
 TEST_DB_NAME = "devpocket_test"
@@ -166,8 +169,6 @@ async def admin_user(client, clean_database):
     assert register_response.status_code == 201
 
     # Update user to admin in database - use clean_database directly
-    from bson import ObjectId
-
     # Find user by username and update to admin AND verify
     result = await clean_database.users.update_one(
         {"username": "adminuser"},
@@ -192,9 +193,13 @@ async def admin_user(client, clean_database):
     user_info = user_response.json()
     # Verify admin status
     # print(f"DEBUG: User info after login: {user_info}")
-    # print(f"DEBUG: Subscription plan: {user_info.get('subscription_plan', 'NOT SET')}")
+    # print(f"DEBUG: Subscription plan: {user_info.get('subscription_plan', 'NOT SET')}")  # noqa: E501
     assert (
         user_info["subscription_plan"] == "admin"
-    ), f"User subscription plan is {user_info['subscription_plan']}, expected 'admin'"
+    ), f"User subscription plan is {user_info['subscription_plan']}, expected 'admin'"  # noqa: E501
 
-    return {"user": user_info, "token": token_data["access_token"], "headers": headers}
+    return {
+        "user": user_info,
+        "token": token_data["access_token"],
+        "headers": headers,
+    }

@@ -159,7 +159,7 @@ async def list_templates(
 )
 async def get_template(
     template_id: str = Path(
-        ..., description="The template ID", example="507f1f77bcf86cd799439011"
+        ..., description="The template ID", examples=["507f1f77bcf86cd799439011"]
     ),
     current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database),
@@ -344,7 +344,9 @@ async def create_template(
 )
 async def update_template(
     template_id: str = Path(
-        ..., description="The template ID to update", example="507f1f77bcf86cd799439011"
+        ...,
+        description="The template ID to update",
+        examples=["507f1f77bcf86cd799439011"],
     ),
     template_data: TemplateUpdate = ...,
     current_admin: UserInDB = Depends(get_current_admin_user),
@@ -423,7 +425,9 @@ async def update_template(
 )
 async def delete_template(
     template_id: str = Path(
-        ..., description="The template ID to delete", example="507f1f77bcf86cd799439011"
+        ...,
+        description="The template ID to delete",
+        examples=["507f1f77bcf86cd799439011"],
     ),
     current_admin: UserInDB = Depends(get_current_admin_user),
     db=Depends(get_database),

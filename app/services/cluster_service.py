@@ -1,5 +1,5 @@
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -67,7 +67,12 @@ class ClusterService:
         if cluster_data.is_default:
             await self.db.clusters.update_many(
                 {"region": cluster_data.region, "is_default": True},
-                {"$set": {"is_default": False, "updated_at": datetime.utcnow()}},
+                {
+                    "$set": {
+                        "is_default": False,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
         # Encrypt the kubeconfig
@@ -82,8 +87,8 @@ class ClusterService:
                 "encrypted_kube_config": encrypted_config,
                 "status": ClusterStatus.ACTIVE,
                 "environments_count": 0,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "created_by": ObjectId(created_by) if created_by else SYSTEM_USER_ID,
             }
         )
@@ -194,10 +199,15 @@ class ClusterService:
             if cluster:
                 await self.db.clusters.update_many(
                     {"region": cluster.region, "is_default": True},
-                    {"$set": {"is_default": False, "updated_at": datetime.utcnow()}},
+                    {
+                        "$set": {
+                            "is_default": False,
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
                 )
 
-        update_dict["updated_at"] = datetime.utcnow()
+        update_dict["updated_at"] = datetime.now(timezone.utc)
 
         result = await self.db.clusters.update_one(
             {"_id": cluster_id}, {"$set": update_dict}
@@ -270,14 +280,14 @@ class ClusterService:
             return ClusterHealthCheck(
                 cluster_id=cluster_id,
                 status=ClusterStatus.INACTIVE,
-                last_check=datetime.utcnow(),
+                last_check=datetime.now(timezone.utc),
                 error_message="Cluster not found",
             )
 
         health_check = ClusterHealthCheck(
             cluster_id=cluster_id,
             status=ClusterStatus.INACTIVE,
-            last_check=datetime.utcnow(),
+            last_check=datetime.now(timezone.utc),
         )
 
         try:
@@ -292,12 +302,12 @@ class ClusterService:
 
             # Test connection (this would need actual kubernetes client setup)
             # For now, we'll just validate the config structure
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
 
             # Mock health check - in production, this would use kubernetes client
             health_check.status = ClusterStatus.ACTIVE
             health_check.response_time_ms = (
-                datetime.utcnow() - start_time
+                datetime.now(timezone.utc) - start_time
             ).total_seconds() * 1000
             health_check.node_count = 3  # Mock data
             health_check.available_resources = {
@@ -312,7 +322,7 @@ class ClusterService:
                 {
                     "$set": {
                         "status": ClusterStatus.ACTIVE,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )
@@ -329,7 +339,7 @@ class ClusterService:
                 {
                     "$set": {
                         "status": ClusterStatus.INACTIVE,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )

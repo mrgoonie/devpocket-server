@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PyObjectId(ObjectId):
@@ -121,8 +121,8 @@ class EnvironmentInDB(BaseModel):
     web_port: Optional[int] = None
 
     # Metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_accessed: Optional[datetime] = None
 
     # Usage tracking
@@ -133,9 +133,7 @@ class EnvironmentInDB(BaseModel):
     # Installation tracking
     installation_completed: bool = False
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
 class EnvironmentResponse(BaseModel):
@@ -159,18 +157,16 @@ class WebSocketSession(BaseModel):
     user_id: PyObjectId
     environment_id: PyObjectId
     connection_id: str
-    connected_at: datetime = Field(default_factory=datetime.utcnow)
-    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
 class EnvironmentMetrics(BaseModel):
     environment_id: PyObjectId
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cpu_usage: float
     memory_usage: float
     storage_usage: float

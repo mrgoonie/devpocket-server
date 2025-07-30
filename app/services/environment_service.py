@@ -3,7 +3,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -27,11 +27,35 @@ from app.services.template_service import template_service
 
 logger = structlog.get_logger(__name__)
 
+
 # Check if we're in test mode
-IS_TEST_ENV = (
-    os.environ.get("TESTING", "false").lower() == "true"
-    or os.environ.get("ENVIRONMENT", "").lower() == "test"
-)
+def _is_test_environment():
+    """Detect if we're running in a test environment"""
+    # Check explicit environment variables
+    if os.environ.get("TESTING", "false").lower() == "true":
+        return True
+    if os.environ.get("ENVIRONMENT", "").lower() == "test":
+        return True
+
+    # Check if running under pytest
+    try:
+        import sys
+
+        if "pytest" in sys.modules:
+            return True
+        if any("pytest" in arg for arg in sys.argv):
+            return True
+    except Exception:
+        pass
+
+    # Check if using test database
+    if "test" in str(settings.MONGODB_URL).lower():
+        return True
+
+    return False
+
+
+IS_TEST_ENV = _is_test_environment()
 
 
 class EnvironmentService:
@@ -67,13 +91,13 @@ class EnvironmentService:
                 "name": env_data.name,
                 "template": env_data.template.value,
                 "status": EnvironmentStatus.CREATING.value,
-                "resources": resources.dict(),
+                "resources": resources.model_dump(),
                 "environment_variables": env_data.environment_variables or {},
                 "namespace": namespace,
                 "pod_name": pod_name,
                 "service_name": service_name,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             }
 
             # Save to database
@@ -94,7 +118,7 @@ class EnvironmentService:
                         "$set": {
                             "status": EnvironmentStatus.ERROR.value,
                             "error_message": str(container_error),
-                            "updated_at": datetime.utcnow(),
+                            "updated_at": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -462,7 +486,7 @@ class EnvironmentService:
             # Check recovery cooldown to prevent rapid consecutive attempts
             last_recovery = environment.get("last_recovery_attempt")
             if last_recovery:
-                from datetime import datetime, timedelta
+                from datetime import datetime, timedelta, timezone
 
                 if isinstance(last_recovery, str):
                     last_recovery = datetime.fromisoformat(
@@ -472,14 +496,14 @@ class EnvironmentService:
                     # Handle MongoDB datetime format
                     pass
                 else:
-                    last_recovery = datetime.utcnow() - timedelta(
+                    last_recovery = datetime.now(timezone.utc) - timedelta(
                         minutes=10
                     )  # Default to allow recovery
 
                 cooldown_period = timedelta(minutes=5)  # 5-minute cooldown
-                if datetime.utcnow() - last_recovery < cooldown_period:
+                if datetime.now(timezone.utc) - last_recovery < cooldown_period:
                     remaining_time = cooldown_period - (
-                        datetime.utcnow() - last_recovery
+                        datetime.now(timezone.utc) - last_recovery
                     )
                     return {
                         "success": False,
@@ -496,9 +520,9 @@ class EnvironmentService:
                 {
                     "$set": {
                         "status": EnvironmentStatus.INSTALLING.value,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                         "recovery_attempt": recovery_attempt + 1,
-                        "last_recovery_attempt": datetime.utcnow(),
+                        "last_recovery_attempt": datetime.now(timezone.utc),
                         "recovery_reason": "User-initiated recovery",
                     },
                     "$unset": {"error_message": "", "installation_warnings": ""},
@@ -1107,7 +1131,7 @@ class EnvironmentService:
                         "$set": {
                             "status": EnvironmentStatus.INSTALLING.value,
                             "cluster_id": cluster.id,
-                            "updated_at": datetime.utcnow(),
+                            "updated_at": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -1152,7 +1176,7 @@ class EnvironmentService:
                     "$set": {
                         "status": EnvironmentStatus.ERROR.value,
                         "error_message": sanitized_error,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )
@@ -1286,7 +1310,7 @@ class EnvironmentService:
                 return None
 
             # Prepare update fields
-            update_fields = {"updated_at": datetime.utcnow()}
+            update_fields = {"updated_at": datetime.now(timezone.utc)}
 
             # Only update fields that are provided and valid
             if "name" in update_data and update_data["name"]:
@@ -1351,7 +1375,7 @@ class EnvironmentService:
 
             # Update the environment in database
             result = await self.db.environments.update_one(
-                {"_id": ObjectId(environment_id), "user_id": ObjectId(user_id)},
+                {"_id": ObjectId(environment_id), "user_id": user_id},
                 {"$set": update_fields},
             )
 
@@ -1548,8 +1572,8 @@ class EnvironmentService:
                 {
                     "$set": {
                         "status": EnvironmentStatus.RUNNING.value,
-                        "updated_at": datetime.utcnow(),
-                        "last_accessed": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
+                        "last_accessed": datetime.now(timezone.utc),
                     }
                 },
             )
@@ -1575,8 +1599,8 @@ class EnvironmentService:
                 {
                     "$set": {
                         "status": EnvironmentStatus.RUNNING.value,
-                        "updated_at": datetime.utcnow(),
-                        "last_accessed": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
+                        "last_accessed": datetime.now(timezone.utc),
                     }
                 },
             )
@@ -1594,7 +1618,7 @@ class EnvironmentService:
                 {
                     "$set": {
                         "status": EnvironmentStatus.ERROR.value,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )
@@ -1657,7 +1681,7 @@ class EnvironmentService:
         from app.models.template import LogEntry
 
         # Base timestamp
-        base_time = since_timestamp or datetime.utcnow()
+        base_time = since_timestamp or datetime.now(timezone.utc)
 
         logs = []
 
@@ -1756,7 +1780,7 @@ class EnvironmentService:
             )
 
             # Save to database
-            session_dict = session.dict(by_alias=True)
+            session_dict = session.model_dump(by_alias=True)
             session_dict.pop("id", None)
 
             result = await self.db.websocket_sessions.insert_one(session_dict)
@@ -1808,7 +1832,7 @@ class EnvironmentService:
     async def record_metrics(self, env_id: str, metrics: EnvironmentMetrics):
         """Record environment metrics"""
         try:
-            metrics_dict = metrics.dict()
+            metrics_dict = metrics.model_dump()
             await self.db.environment_metrics.insert_one(metrics_dict)
 
         except Exception as e:
@@ -1855,7 +1879,7 @@ class EnvironmentService:
                     "type": "installation_log",
                     "environment_id": str(environment.id),
                     "data": line,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
                 }
                 await connection_manager.send_user_message(
                     json.dumps(message), environment.user_id
@@ -1888,7 +1912,7 @@ class EnvironmentService:
                     "external_url": external_url,
                     "web_port": 8080,
                     "ssh_port": 22,
-                    "updated_at": datetime.utcnow(),
+                    "updated_at": datetime.now(timezone.utc),
                 }
 
                 # Add warnings if present
@@ -1942,7 +1966,7 @@ class EnvironmentService:
                         {
                             "$set": {
                                 "status": EnvironmentStatus.ERROR.value,
-                                "updated_at": datetime.utcnow(),
+                                "updated_at": datetime.now(timezone.utc),
                                 "error_message": error,
                             }
                         },
@@ -1990,7 +2014,7 @@ class EnvironmentService:
                     {
                         "$set": {
                             "status": EnvironmentStatus.ERROR.value,
-                            "updated_at": datetime.utcnow(),
+                            "updated_at": datetime.now(timezone.utc),
                             "error_message": str(e),
                         }
                     },

@@ -7,7 +7,7 @@ and used across all API endpoints to ensure consistent error documentation.
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ErrorDetail(BaseModel):
@@ -15,8 +15,9 @@ class ErrorDetail(BaseModel):
 
     detail: str
 
-    class Config:
-        json_schema_extra = {"example": {"detail": "Error description"}}
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"detail": "Error description"}}
+    )
 
 
 class ValidationErrorDetail(BaseModel):
@@ -25,8 +26,8 @@ class ValidationErrorDetail(BaseModel):
     detail: str
     errors: Optional[List[Dict[str, Any]]] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "detail": "Validation error",
                 "errors": [
@@ -38,6 +39,7 @@ class ValidationErrorDetail(BaseModel):
                 ],
             }
         }
+    )
 
 
 # Common error responses for reuse across endpoints

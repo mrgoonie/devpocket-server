@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PyObjectId(ObjectId):
@@ -65,8 +65,8 @@ class TemplateBase(BaseModel):
 
 
 class TemplateCreate(TemplateBase):
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "java",
                 "display_name": "Java 17 LTS",
@@ -92,6 +92,7 @@ class TemplateCreate(TemplateBase):
                 "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/java/java-original.svg",
             }
         }
+    )
 
 
 class TemplateUpdate(BaseModel):
@@ -107,8 +108,8 @@ class TemplateUpdate(BaseModel):
     icon_url: Optional[str] = None
     status: Optional[TemplateStatus] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "description": "Updated Java development environment with Spring Boot support",
                 "tags": ["java", "spring-boot", "microservices"],
@@ -119,20 +120,19 @@ class TemplateUpdate(BaseModel):
                 "status": "active",
             }
         }
+    )
 
 
 class TemplateInDB(TemplateBase):
     id: PyObjectId = Field(alias="_id")
     status: TemplateStatus = TemplateStatus.ACTIVE
     version: str = "1.0.0"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: PyObjectId
     usage_count: int = 0
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
 class TemplateResponse(TemplateBase):

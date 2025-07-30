@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -309,8 +309,8 @@ class TemplateService:
                 {
                     "status": TemplateStatus.ACTIVE,
                     "version": "1.0.0",
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
                     "created_by": SYSTEM_USER_ID,
                     "usage_count": 0,
                 }
@@ -450,8 +450,8 @@ class TemplateService:
             {
                 "status": TemplateStatus.ACTIVE,
                 "version": "1.0.0",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "created_by": ObjectId(created_by) if created_by else SYSTEM_USER_ID,
                 "usage_count": 0,
             }
@@ -484,7 +484,7 @@ class TemplateService:
         if not update_dict:
             return await self.get_template_by_id(template_id)
 
-        update_dict["updated_at"] = datetime.utcnow()
+        update_dict["updated_at"] = datetime.now(timezone.utc)
 
         result = await self.db.templates.update_one(
             {"_id": object_id}, {"$set": update_dict}
@@ -511,7 +511,7 @@ class TemplateService:
             {
                 "$set": {
                     "status": TemplateStatus.DEPRECATED,
-                    "updated_at": datetime.utcnow(),
+                    "updated_at": datetime.now(timezone.utc),
                 }
             },
         )
@@ -525,7 +525,10 @@ class TemplateService:
 
         await self.db.templates.update_one(
             {"_id": template_id},
-            {"$inc": {"usage_count": 1}, "$set": {"updated_at": datetime.utcnow()}},
+            {
+                "$inc": {"usage_count": 1},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
         )
 
     async def initialize_default_templates(self):
@@ -760,7 +763,7 @@ class TemplateService:
 
             # Add validation metadata to template
             template["validation"] = {
-                "validated_at": datetime.utcnow(),
+                "validated_at": datetime.now(timezone.utc),
                 "is_valid": validation_result["valid"],
                 "warnings": validation_result["warnings"],
                 "errors": validation_result["errors"],

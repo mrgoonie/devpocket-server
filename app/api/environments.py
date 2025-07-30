@@ -472,9 +472,9 @@ async def get_environment_metrics(
             )
 
         # Get metrics from database (last N hours)
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         cursor = db.environment_metrics.find(
             {"environment_id": environment_id, "timestamp": {"$gte": since}}
@@ -528,7 +528,7 @@ async def restart_environment(
     environment_id: str = Path(
         ...,
         description="The environment ID to restart",
-        example="507f1f77bcf86cd799439011",
+        examples=["507f1f77bcf86cd799439011"],
     ),
     current_user: UserInDB = Depends(get_current_user),
     db=Depends(get_database),
@@ -669,16 +669,20 @@ async def get_environment_logs(
     environment_id: str = Path(
         ...,
         description="The environment ID to get logs from",
-        example="507f1f77bcf86cd799439011",
+        examples=["507f1f77bcf86cd799439011"],
     ),
     current_user: UserInDB = Depends(get_current_user),
     lines: int = Query(
-        100, description="Number of log lines to retrieve", ge=1, le=1000, example=100
+        100,
+        description="Number of log lines to retrieve",
+        ge=1,
+        le=1000,
+        examples=[100],
     ),
     since: Optional[str] = Query(
         None,
         description="Get logs since timestamp (ISO 8601 format)",
-        example="2024-01-01T12:00:00Z",
+        examples=["2024-01-01T12:00:00Z"],
     ),
     db=Depends(get_database),
 ):
@@ -706,7 +710,7 @@ async def get_environment_logs(
         since_timestamp = None
         if since:
             try:
-                from datetime import datetime
+                from datetime import datetime, timezone
 
                 since_timestamp = datetime.fromisoformat(since.replace("Z", "+00:00"))
             except ValueError:

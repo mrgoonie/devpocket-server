@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import httpx
@@ -68,8 +68,8 @@ class AuthService:
                 "is_active": True,
                 "is_verified": False,
                 "subscription_plan": "free",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "failed_login_attempts": 0,
             }
 
@@ -112,12 +112,26 @@ class AuthService:
             user = UserInDB(**user_doc)
 
             # Check if account is locked
-            if user.locked_until and user.locked_until > datetime.utcnow():
-                logger.warning(f"Login attempt for locked account: {user.username}")
-                raise HTTPException(
-                    status_code=status.HTTP_423_LOCKED,
-                    detail="Account is temporarily locked due to too many failed attempts",
-                )
+            if user.locked_until:
+                # Ensure both datetimes are timezone-aware for comparison
+                locked_until = user.locked_until
+                current_time = datetime.now(timezone.utc)
+
+                # Make locked_until timezone-aware if it isn't
+                if locked_until.tzinfo is None:
+                    locked_until = locked_until.replace(tzinfo=timezone.utc)
+
+                # Make current_time timezone-naive if locked_until is timezone-naive
+                # This shouldn't happen due to above, but defensive programming
+                if locked_until.tzinfo is None and current_time.tzinfo is not None:
+                    current_time = current_time.replace(tzinfo=None)
+
+                if locked_until > current_time:
+                    logger.warning(f"Login attempt for locked account: {user.username}")
+                    raise HTTPException(
+                        status_code=status.HTTP_423_LOCKED,
+                        detail="Account is temporarily locked due to too many failed attempts",
+                    )
 
             # Verify password
             if not verify_password(login_data.password, user.hashed_password):
@@ -134,7 +148,7 @@ class AuthService:
                         "$set": {
                             "failed_login_attempts": 0,
                             "locked_until": None,
-                            "last_login": datetime.utcnow(),
+                            "last_login": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -142,7 +156,7 @@ class AuthService:
                 # Just update last login
                 await self.db.users.update_one(
                     {"_id": ObjectId(user.id)},
-                    {"$set": {"last_login": datetime.utcnow()}},
+                    {"$set": {"last_login": datetime.now(timezone.utc)}},
                 )
 
             logger.info(f"User authenticated successfully: {user.username}")
@@ -167,7 +181,7 @@ class AuthService:
             # Lock account after 5 failed attempts
             if failed_attempts >= 5:
                 lock_duration = timedelta(minutes=30)  # 30 minutes lock
-                update_data["locked_until"] = datetime.utcnow() + lock_duration
+                update_data["locked_until"] = datetime.now(timezone.utc) + lock_duration
                 logger.warning(
                     f"Account locked for user {user_id} due to {failed_attempts} failed attempts"
                 )
@@ -275,11 +289,11 @@ class AuthService:
         """Generate email verification token for user"""
         try:
             import secrets
-            from datetime import datetime, timedelta
+            from datetime import datetime, timedelta, timezone
 
             # Generate secure random token
             token = secrets.token_urlsafe(32)
-            expires = datetime.utcnow() + timedelta(hours=24)  # 24 hour expiry
+            expires = datetime.now(timezone.utc) + timedelta(hours=24)  # 24 hour expiry
 
             # Update user with verification token
             await self.db.users.update_one(
@@ -304,13 +318,13 @@ class AuthService:
     async def verify_email_token(self, token: str) -> bool:
         """Verify email verification token and mark user as verified"""
         try:
-            from datetime import datetime
+            from datetime import datetime, timezone
 
             # Find user with this token
             user = await self.db.users.find_one(
                 {
                     "email_verification_token": token,
-                    "email_verification_expires": {"$gt": datetime.utcnow()},
+                    "email_verification_expires": {"$gt": datetime.now(timezone.utc)},
                 }
             )
 
@@ -380,7 +394,7 @@ class AuthService:
                 # Update last login
                 await self.db.users.update_one(
                     {"_id": user_doc["_id"]},
-                    {"$set": {"last_login": datetime.utcnow()}},
+                    {"$set": {"last_login": datetime.now(timezone.utc)}},
                 )
                 user_doc = self._convert_objectid_to_string(user_doc)
                 user = UserInDB(**user_doc)
@@ -399,7 +413,7 @@ class AuthService:
                             "google_id": google_user.id,
                             "avatar_url": google_user.picture,
                             "is_verified": True,  # Google emails are verified
-                            "last_login": datetime.utcnow(),
+                            "last_login": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -431,9 +445,9 @@ class AuthService:
                 "is_active": True,
                 "is_verified": True,  # Google emails are verified
                 "subscription_plan": "free",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "last_login": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "last_login": datetime.now(timezone.utc),
                 "failed_login_attempts": 0,
             }
 

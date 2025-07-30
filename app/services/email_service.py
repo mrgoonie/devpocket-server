@@ -63,7 +63,7 @@ class EmailService:
             The DevPocket Team
             """
 
-            response = resend.emails.send(
+            response = resend.Emails.send(
                 {
                     "from": settings.EMAIL_FROM,
                     "to": [to_email],
@@ -134,7 +134,7 @@ class EmailService:
             The DevPocket Team
             """
 
-            response = resend.emails.send(
+            response = resend.Emails.send(
                 {
                     "from": settings.EMAIL_FROM,
                     "to": [to_email],
@@ -212,7 +212,7 @@ class EmailService:
             The DevPocket Team
             """
 
-            response = resend.emails.send(
+            response = resend.Emails.send(
                 {
                     "from": settings.EMAIL_FROM,
                     "to": [to_email],
