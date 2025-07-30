@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.19 (2025-07-30)
+
+### Features
+
+- Add real-time installation status via WebSocket
+  ([`21991ee`](https://github.com/mrgoonie/devpocket-server/commit/21991eeebfce7520e347290c8f2d8a961835ea59))
+
+- Add INSTALLING status to environment model for installation tracking - Create KubernetesLogService
+  for streaming pod logs via Kubernetes API - Enhance WebSocketConnectionManager with user
+  broadcasting capability - Update environment creation flow to stream installation logs - Add
+  real-time progress updates during package installation - Detect installation completion via 'sleep
+  infinity' pattern - Handle timeouts and errors with proper status transitions - Support multiple
+  WebSocket connections per user - Stream raw container logs (apt-get, npm install, etc.) - Update
+  API responses to include installation status
+
+Provides transparent feedback to users during environment setup, showing exact installation progress
+  and system configuration steps.
+
+
 ## v0.1.0-dev.18 (2025-07-29)
 
 ### Bug Fixes
