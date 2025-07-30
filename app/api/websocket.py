@@ -58,6 +58,12 @@ class WebSocketConnectionManager:
             except Exception as e:
                 logger.error(f"Error sending message to {connection_id}: {e}")
 
+    async def send_user_message(self, message: str, user_id: str):
+        """Send message to all connections of a specific user"""
+        if user_id in self.user_connections:
+            for connection_id in self.user_connections[user_id]:
+                await self.send_personal_message(message, connection_id)
+
 
 # Global connection manager
 connection_manager = WebSocketConnectionManager()
@@ -144,13 +150,14 @@ async def websocket_terminal(
             return
         logger.info(f"WebSocket terminal: Environment found: {environment.name}")
 
-        if environment.status != "running":
+        # Allow connections for running environments or environments currently installing
+        if environment.status not in ["running", "installing"]:
             logger.error(
-                f"WebSocket terminal: Environment not running: {environment.status}"
+                f"WebSocket terminal: Environment not ready: {environment.status}"
             )
-            await websocket.close(code=1008, reason="Environment not running")
+            await websocket.close(code=1008, reason="Environment not ready")
             return
-        logger.info("WebSocket terminal: Environment is running")
+        logger.info(f"WebSocket terminal: Environment status is {environment.status}")
 
         # Accept connection
         await connection_manager.connect(websocket, connection_id, str(user.id))
@@ -172,72 +179,81 @@ async def websocket_terminal(
                 "name": environment.name,
                 "template": environment.template.value,
                 "status": environment.status.value,
-                "pty_enabled": True,
+                "installation_completed": environment.installation_completed,
+                "pty_enabled": environment.status.value == "running",
             },
         }
         await connection_manager.send_personal_message(
             json.dumps(welcome_msg), connection_id
         )
 
-        # Create PTY session
-        pty_session_id = f"pty_{connection_id}"
+        # Create PTY session only if environment is running
+        pty_session_id = None
+        if environment.status.value == "running":
+            pty_session_id = f"pty_{connection_id}"
 
-        def pty_output_callback(data: str):
-            """Callback for PTY output"""
-            try:
-                import asyncio
-
-                # Create output message
-                output_msg = {
-                    "type": "output",
-                    "data": data,
-                }
-
-                # Get the current event loop from the main thread
+            def pty_output_callback(data: str):
+                """Callback for PTY output"""
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Schedule the coroutine to run in the event loop
-                        asyncio.create_task(
-                            connection_manager.send_personal_message(
-                                json.dumps(output_msg), connection_id
+                    import asyncio
+
+                    # Create output message
+                    output_msg = {
+                        "type": "output",
+                        "data": data,
+                    }
+
+                    # Get the current event loop from the main thread
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Schedule the coroutine to run in the event loop
+                            asyncio.create_task(
+                                connection_manager.send_personal_message(
+                                    json.dumps(output_msg), connection_id
+                                )
                             )
-                        )
-                    else:
-                        # If no loop is running, run it
+                        else:
+                            # If no loop is running, run it
+                            loop.run_until_complete(
+                                connection_manager.send_personal_message(
+                                    json.dumps(output_msg), connection_id
+                                )
+                            )
+                    except RuntimeError:
+                        # No event loop available, create a new one
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
                         loop.run_until_complete(
                             connection_manager.send_personal_message(
                                 json.dumps(output_msg), connection_id
                             )
                         )
-                except RuntimeError:
-                    # No event loop available, create a new one
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(
-                        connection_manager.send_personal_message(
-                            json.dumps(output_msg), connection_id
-                        )
-                    )
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error sending PTY output: {e}")
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"Error sending PTY output: {e}")
 
-        # Start PTY session
-        pty_success = await pty_manager.create_session(
-            pty_session_id,
-            environment_id,
-            str(user.id),
-            pty_output_callback,
-            shell_command="su - devpocket",
-        )
+            # Start PTY session
+            pty_success = await pty_manager.create_session(
+                pty_session_id,
+                environment_id,
+                str(user.id),
+                pty_output_callback,
+                shell_command="su - devpocket",
+            )
 
-        if not pty_success:
-            logger.error(f"Failed to create PTY session for {environment_id}")
-            await websocket.close(code=1008, reason="Failed to create terminal session")
-            return
+            if not pty_success:
+                logger.error(f"Failed to create PTY session for {environment_id}")
+                await websocket.close(
+                    code=1008, reason="Failed to create terminal session"
+                )
+                return
 
-        logger.info(f"PTY session created: {pty_session_id}")
+            logger.info(f"PTY session created: {pty_session_id}")
+        else:
+            logger.info(
+                f"Environment is installing, PTY session will be created once installation completes"
+            )
 
         # Main message loop
         while True:
@@ -267,18 +283,30 @@ async def websocket_terminal(
 
                 # Handle different message types
                 if message.get("type") == "input":
-                    # Terminal input - send to PTY
-                    input_data = message.get("data", "")
-                    success = await pty_manager.write_to_session(
-                        pty_session_id, input_data
-                    )
+                    # Terminal input - send to PTY only if session exists
+                    if pty_session_id:
+                        input_data = message.get("data", "")
+                        success = await pty_manager.write_to_session(
+                            pty_session_id, input_data
+                        )
 
-                    if not success:
+                        if not success:
+                            await connection_manager.send_personal_message(
+                                json.dumps(
+                                    {
+                                        "type": "error",
+                                        "message": "Failed to send input to terminal",
+                                    }
+                                ),
+                                connection_id,
+                            )
+                    else:
+                        # Environment is still installing
                         await connection_manager.send_personal_message(
                             json.dumps(
                                 {
-                                    "type": "error",
-                                    "message": "Failed to send input to terminal",
+                                    "type": "info",
+                                    "message": "Environment is still installing. Terminal will be available once installation completes.",
                                 }
                             ),
                             connection_id,
@@ -292,14 +320,18 @@ async def websocket_terminal(
                     )
 
                 elif message.get("type") == "resize":
-                    # Handle terminal resize
-                    cols = message.get("cols", 80)
-                    rows = message.get("rows", 24)
+                    # Handle terminal resize only if PTY session exists
+                    if pty_session_id:
+                        cols = message.get("cols", 80)
+                        rows = message.get("rows", 24)
 
-                    success = await pty_manager.resize_session(
-                        pty_session_id, cols, rows
-                    )
-                    logger.debug(f"Terminal resize: {cols}x{rows}, success: {success}")
+                        success = await pty_manager.resize_session(
+                            pty_session_id, cols, rows
+                        )
+                        logger.debug(
+                            f"Terminal resize: {cols}x{rows}, success: {success}"
+                        )
+                    # Ignore resize requests for installing environments
 
             except WebSocketDisconnect:
                 logger.info(f"WebSocket client disconnected: {connection_id}")

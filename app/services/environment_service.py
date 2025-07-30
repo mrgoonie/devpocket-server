@@ -20,6 +20,7 @@ from app.models.environment import (
     WebSocketSession,
 )
 from app.models.user import UserInDB
+from app.services.kubernetes_log_service import kubernetes_log_service
 from app.services.template_service import template_service
 
 logger = structlog.get_logger(__name__)
@@ -506,57 +507,29 @@ class EnvironmentService:
                 )
                 logger.info(f"Created service: {environment.service_name}")
 
-                # Wait for deployment to be ready (with timeout)
-                import time
-
-                max_wait = 300  # 5 minutes
-                wait_interval = 10
-                waited = 0
-
-                while waited < max_wait:
-                    try:
-                        deployment = v1_apps.read_namespaced_deployment(
-                            name=environment.pod_name, namespace=environment.namespace
-                        )
-
-                        if (
-                            deployment.status.ready_replicas == 1
-                            and deployment.status.available_replicas == 1
-                        ):
-                            logger.info(f"Deployment {environment.pod_name} is ready")
-                            break
-
-                    except ApiException:
-                        pass
-
-                    await asyncio.sleep(wait_interval)
-                    waited += wait_interval
-
-                if waited >= max_wait:
-                    raise Exception(
-                        "Deployment failed to become ready within 5 minutes"
-                    )
-
-                # Update environment with created resources
-                external_url = f"https://env-{environment.pod_name}.devpocket.io"
-                internal_url = f"http://{environment.service_name}.{environment.namespace}.svc.cluster.local:8080"
-
+                # Update status to INSTALLING after pod creation
                 await self.db.environments.update_one(
                     {"_id": environment.id},
                     {
                         "$set": {
-                            "status": EnvironmentStatus.RUNNING.value,
+                            "status": EnvironmentStatus.INSTALLING.value,
                             "cluster_id": cluster.id,
-                            "internal_url": internal_url,
-                            "external_url": external_url,
-                            "web_port": 8080,
-                            "ssh_port": 22,
                             "updated_at": datetime.utcnow(),
                         }
                     },
                 )
+                logger.info(
+                    f"Environment {environment.pod_name} status set to INSTALLING"
+                )
 
-                logger.info(f"Environment created successfully: {environment.name}")
+                # Start async task to stream logs and monitor installation
+                asyncio.create_task(
+                    self._stream_installation_logs(environment, cluster.id)
+                )
+
+                logger.info(
+                    f"Started installation log streaming for: {environment.name}"
+                )
 
             finally:
                 # Clean up temporary kubeconfig file
@@ -1243,6 +1216,124 @@ class EnvironmentService:
 
         except Exception as e:
             logger.error(f"Error recording metrics: {e}")
+
+    async def _stream_installation_logs(
+        self, environment: EnvironmentInDB, cluster_id: str
+    ):
+        """Stream pod logs during installation phase"""
+        import json
+
+        from app.api.websocket import connection_manager
+
+        try:
+            logger.info(
+                f"Starting installation log streaming for environment {environment.id}"
+            )
+
+            # Set up kubernetes log service
+            kubernetes_log_service.set_database(self.db)
+
+            # Callbacks for log streaming
+            async def on_log_line(line: str):
+                """Send each log line to connected WebSocket clients"""
+                message = {
+                    "type": "installation_log",
+                    "environment_id": str(environment.id),
+                    "data": line,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+                await connection_manager.send_user_message(
+                    json.dumps(message), environment.user_id
+                )
+
+            async def on_complete():
+                """Handle installation completion"""
+                logger.info(f"Installation completed for environment {environment.id}")
+
+                # Update environment status to RUNNING and set installation_completed
+                external_url = f"https://env-{environment.pod_name}.devpocket.io"
+                internal_url = f"http://{environment.service_name}.{environment.namespace}.svc.cluster.local:8080"
+
+                await self.db.environments.update_one(
+                    {"_id": environment.id},
+                    {
+                        "$set": {
+                            "status": EnvironmentStatus.RUNNING.value,
+                            "installation_completed": True,
+                            "internal_url": internal_url,
+                            "external_url": external_url,
+                            "web_port": 8080,
+                            "ssh_port": 22,
+                            "updated_at": datetime.utcnow(),
+                        }
+                    },
+                )
+
+                # Send completion message
+                completion_message = {
+                    "type": "installation_complete",
+                    "environment_id": str(environment.id),
+                    "status": "running",
+                }
+                await connection_manager.send_user_message(
+                    json.dumps(completion_message), environment.user_id
+                )
+
+            async def on_error(error: str):
+                """Handle installation errors"""
+                logger.error(
+                    f"Installation error for environment {environment.id}: {error}"
+                )
+
+                # Update status to ERROR
+                await self.db.environments.update_one(
+                    {"_id": environment.id},
+                    {
+                        "$set": {
+                            "status": EnvironmentStatus.ERROR.value,
+                            "updated_at": datetime.utcnow(),
+                        }
+                    },
+                )
+
+                # Send error message
+                error_message = {
+                    "type": "installation_error",
+                    "environment_id": str(environment.id),
+                    "error": error,
+                }
+                await connection_manager.send_user_message(
+                    json.dumps(error_message), environment.user_id
+                )
+
+            # Stream logs from the pod
+            await kubernetes_log_service.stream_pod_logs(
+                namespace=environment.namespace,
+                pod_name=environment.pod_name,
+                environment_id=str(environment.id),
+                user_id=environment.user_id,
+                on_log_line=on_log_line,
+                on_complete=on_complete,
+                on_error=on_error,
+                completion_pattern="sleep infinity",
+                timeout=600,  # 10 minutes timeout
+            )
+
+        except Exception as e:
+            logger.error(f"Error in _stream_installation_logs: {e}")
+            # Try to update status to ERROR
+            try:
+                await self.db.environments.update_one(
+                    {"_id": environment.id},
+                    {
+                        "$set": {
+                            "status": EnvironmentStatus.ERROR.value,
+                            "updated_at": datetime.utcnow(),
+                        }
+                    },
+                )
+            except Exception:
+                pass
 
 
 # Global environment service instance

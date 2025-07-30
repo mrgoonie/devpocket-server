@@ -33,6 +33,7 @@ class PyObjectId(ObjectId):
 
 class EnvironmentStatus(str, Enum):
     CREATING = "creating"
+    INSTALLING = "installing"
     RUNNING = "running"
     STOPPED = "stopped"
     TERMINATED = "terminated"
@@ -128,6 +129,9 @@ class EnvironmentInDB(BaseModel):
     memory_usage: Optional[float] = 0.0  # percentage
     storage_usage: Optional[float] = 0.0  # percentage
 
+    # Installation tracking
+    installation_completed: bool = False
+
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
@@ -146,6 +150,7 @@ class EnvironmentResponse(BaseModel):
     cpu_usage: Optional[float]
     memory_usage: Optional[float]
     storage_usage: Optional[float]
+    installation_completed: bool = False
 
 
 class WebSocketSession(BaseModel):

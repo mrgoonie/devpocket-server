@@ -96,6 +96,7 @@ async def create_environment(
             cpu_usage=environment.cpu_usage,
             memory_usage=environment.memory_usage,
             storage_usage=environment.storage_usage,
+            installation_completed=environment.installation_completed,
         )
 
     except HTTPException:
@@ -146,6 +147,7 @@ async def list_environments(
                     cpu_usage=env.cpu_usage,
                     memory_usage=env.memory_usage,
                     storage_usage=env.storage_usage,
+                    installation_completed=env.installation_completed,
                 )
             )
 
@@ -200,6 +202,7 @@ async def get_environment(
             cpu_usage=environment.cpu_usage,
             memory_usage=environment.memory_usage,
             storage_usage=environment.storage_usage,
+            installation_completed=environment.installation_completed,
         )
 
     except HTTPException:
@@ -268,6 +271,7 @@ async def update_environment(
             cpu_usage=updated_environment.cpu_usage,
             memory_usage=updated_environment.memory_usage,
             storage_usage=updated_environment.storage_usage,
+            installation_completed=updated_environment.installation_completed,
         )
 
     except HTTPException:
