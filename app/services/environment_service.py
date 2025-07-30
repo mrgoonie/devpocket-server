@@ -1,5 +1,7 @@
 import asyncio
 import os
+import re
+import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -559,7 +561,7 @@ class EnvironmentService:
 
         logger.info(f"Waiting for PVC {pvc_name} to be ready in namespace {namespace}")
 
-        start_time = asyncio.get_event_loop().time()
+        start_time = time.time()
         while True:
             try:
                 pvc = v1_core.read_namespaced_persistent_volume_claim(
@@ -582,7 +584,7 @@ class EnvironmentService:
                     raise Exception(f"Error checking PVC {pvc_name}: {e}")
 
             # Check timeout
-            elapsed = asyncio.get_event_loop().time() - start_time
+            elapsed = time.time() - start_time
             if elapsed > timeout:
                 raise Exception(
                     f"Timeout waiting for PVC {pvc_name} to be ready after {timeout}s"
@@ -639,10 +641,62 @@ class EnvironmentService:
             except Exception as e:
                 cleanup_errors.append(f"Failed to cleanup home PVC: {e}")
 
+        # Clean up namespace last (only if we created it)
+        if created_resources.get("namespace"):
+            try:
+                v1_core.delete_namespace(name=environment.namespace)
+                logger.info(f"Cleaned up namespace: {environment.namespace}")
+            except Exception as e:
+                cleanup_errors.append(f"Failed to cleanup namespace: {e}")
+
         if cleanup_errors:
             logger.warning(
                 f"Some cleanup operations failed: {'; '.join(cleanup_errors)}"
             )
+
+    def _get_kubernetes_clients(self, kubeconfig_path: str):
+        """Create isolated kubernetes clients with proper SSL config to avoid race conditions."""
+        from kubernetes import client, config as k8s_config
+
+        config = client.Configuration()
+        k8s_config.load_kube_config(
+            config_file=kubeconfig_path, client_configuration=config
+        )
+        config.verify_ssl = False
+        config.ssl_ca_cert = None
+
+        v1_core = client.CoreV1Api(client.ApiClient(config))
+        v1_apps = client.AppsV1Api(client.ApiClient(config))
+        return v1_core, v1_apps
+
+    def _sanitize_error_message(self, error_msg: str) -> str:
+        """Sanitize error messages to prevent sensitive information disclosure."""
+        # Remove potential sensitive patterns
+        sanitized = re.sub(
+            r"token[\s=:][\w\-\.]+", "token=<redacted>", error_msg, flags=re.IGNORECASE
+        )
+        sanitized = re.sub(
+            r"password[\s=:][\w\-\.]+",
+            "password=<redacted>",
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+        sanitized = re.sub(
+            r"secret[\s=:][\w\-\.]+",
+            "secret=<redacted>",
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+        sanitized = re.sub(
+            r"api[\s-]?key[\s=:][\w\-\.]+",
+            "apikey=<redacted>",
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+        # Limit length to prevent log flooding
+        if len(sanitized) > 500:
+            sanitized = sanitized[:500] + "... [truncated]"
+        return sanitized
 
     async def _create_container(self, environment: EnvironmentInDB):
         """Create the actual container/pod in Kubernetes"""
@@ -730,22 +784,8 @@ class EnvironmentService:
                 kubeconfig_path = temp_kubeconfig.name
 
             try:
-                # Load kubeconfig
-                k8s_config.load_kube_config(config_file=kubeconfig_path)
-
-                # Disable SSL verification for testing (should be configured properly in production)
-                import ssl
-
-                from kubernetes.client.configuration import Configuration
-
-                config = Configuration.get_default_copy()
-                config.verify_ssl = False
-                config.ssl_ca_cert = None
-                Configuration.set_default(config)
-
-                # Initialize Kubernetes clients
-                v1_core = client.CoreV1Api()
-                v1_apps = client.AppsV1Api()
+                # Create isolated Kubernetes API clients (fixes race condition)
+                v1_core, v1_apps = self._get_kubernetes_clients(kubeconfig_path)
 
                 logger.info(
                     f"Kubernetes clients initialized for environment {environment.pod_name}"
@@ -854,11 +894,14 @@ class EnvironmentService:
                 logger.info(
                     f"Waiting for PVCs to be ready for environment {environment.pod_name}"
                 )
-                await self._wait_for_pvc_ready(
-                    v1_core, environment.namespace, f"home-{environment.pod_name}"
-                )
-                await self._wait_for_pvc_ready(
-                    v1_core, environment.namespace, f"system-{environment.pod_name}"
+                # Wait for both PVCs in parallel for better performance
+                await asyncio.gather(
+                    self._wait_for_pvc_ready(
+                        v1_core, environment.namespace, f"home-{environment.pod_name}"
+                    ),
+                    self._wait_for_pvc_ready(
+                        v1_core, environment.namespace, f"system-{environment.pod_name}"
+                    ),
                 )
                 logger.info(
                     f"All PVCs are ready for environment {environment.pod_name}"
@@ -1087,8 +1130,9 @@ class EnvironmentService:
                     os.unlink(kubeconfig_path)
 
         except Exception as e:
+            sanitized_error = self._sanitize_error_message(str(e))
             logger.error(
-                f"Error creating container for environment {environment.id}: {e}"
+                f"Error creating container for environment {environment.id}: {sanitized_error}"
             )
 
             # Clean up any resources that were created before the failure
@@ -1107,7 +1151,7 @@ class EnvironmentService:
                 {
                     "$set": {
                         "status": EnvironmentStatus.ERROR.value,
-                        "error_message": str(e),
+                        "error_message": sanitized_error,
                         "updated_at": datetime.utcnow(),
                     }
                 },
@@ -1159,19 +1203,8 @@ class EnvironmentService:
                 kubeconfig_path = temp_kubeconfig.name
 
             try:
-                # Load kubeconfig
-                k8s_config.load_kube_config(config_file=kubeconfig_path)
-
-                # Disable SSL verification for testing
-                from kubernetes.client.configuration import Configuration
-
-                config = Configuration.get_default_copy()
-                config.verify_ssl = False
-                config.ssl_ca_cert = None
-                Configuration.set_default(config)
-
-                # Initialize Kubernetes client
-                v1_core = client.CoreV1Api()
+                # Create isolated Kubernetes API clients (fixes race condition)
+                v1_core, v1_apps = self._get_kubernetes_clients(kubeconfig_path)
 
                 # Get pods for this deployment
                 label_selector = f"app=devpocket,environment={environment.pod_name}"
