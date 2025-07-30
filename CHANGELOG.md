@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.20 (2025-07-30)
+
+### Bug Fixes
+
+- Resolve GitHub Actions test suite failures
+  ([`ffddab6`](https://github.com/mrgoonie/devpocket-server/commit/ffddab6c096eaaef5a6ff0eb6c5e0a12e2c1922a))
+
+- Add missing GOLANG environment template enum value - Fix test fixtures to use correct client and
+  authenticated_user patterns - Update authorization test to expect 403 instead of 401 status code
+
+This resolves all environment logs tests (3 previously failing with 500 errors) and fixes fixture
+  reference errors in 9 update environment tests.
+
+
 ## v0.1.0-dev.19 (2025-07-30)
 
 ### Features
