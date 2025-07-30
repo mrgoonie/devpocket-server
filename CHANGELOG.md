@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.21 (2025-07-30)
+
+### Bug Fixes
+
+- Resolve Kubernetes client race condition and security issues
+  ([`ea4e018`](https://github.com/mrgoonie/devpocket-server/commit/ea4e01832a80f185ca0ef7dfda9092477666f063))
+
+- Replace deprecated asyncio.get_event_loop().time() with time.time() - Fix race condition by
+  creating isolated Kubernetes API clients - Add namespace cleanup to prevent resource leaks -
+  Implement parallel PVC waiting with asyncio.gather() - Add error message sanitization to prevent
+  sensitive info disclosure - Update task completion status for production readiness
+
+- Resolve Kubernetes environment creation failures
+  ([`b155b9a`](https://github.com/mrgoonie/devpocket-server/commit/b155b9aff11c4de8d6f5f146f3600d5070633b73))
+
+- Fix async task handling in create_environment by awaiting container creation - Add comprehensive
+  error handling with detailed error messages - Implement PVC readiness validation before deployment
+  creation - Add resource cleanup mechanism for failed deployments - Enhance logging throughout
+  Kubernetes resource creation process - Update environment status with error details on failures -
+  Prevent orphaned PVCs when deployment creation fails
+
+
 ## v0.1.0-dev.20 (2025-07-30)
 
 ### Bug Fixes
