@@ -47,6 +47,7 @@ class EnvironmentTemplate(str, Enum):
     DEBIAN = "debian"
     NODEJS = "nodejs"
     PYTHON = "python"
+    GOLANG = "golang"
 
 
 class ResourceLimits(BaseModel):

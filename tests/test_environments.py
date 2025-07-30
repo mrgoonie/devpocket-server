@@ -456,16 +456,17 @@ class TestEnvironmentEndpoints:
 
         assert response.status_code == 403
 
-    async def test_update_environment_success(self, auth_client, test_user):
+    async def test_update_environment_success(self, client, authenticated_user):
         """Test successful environment update"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
                 "resources": {"cpu": "500m", "memory": "1Gi", "storage": "5Gi"},
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -477,8 +478,10 @@ class TestEnvironmentEndpoints:
             "environment_variables": {"NEW_VAR": "test_value"},
         }
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 200
@@ -486,15 +489,16 @@ class TestEnvironmentEndpoints:
         assert data["name"] == "updated-test-env"
         assert data["resources"]["storage"] == "8Gi"
 
-    async def test_update_environment_partial(self, auth_client, test_user):
+    async def test_update_environment_partial(self, client, authenticated_user):
         """Test partial environment update (only name)"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -502,23 +506,27 @@ class TestEnvironmentEndpoints:
         # Update only name
         update_data = {"name": "renamed-env"}
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "renamed-env"
 
-    async def test_update_environment_not_found(self, auth_client, test_user):
+    async def test_update_environment_not_found(self, client, authenticated_user):
         """Test updating non-existent environment"""
         from bson import ObjectId
 
         fake_env_id = str(ObjectId())
         update_data = {"name": "updated-name"}
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{fake_env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{fake_env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 404
@@ -535,18 +543,19 @@ class TestEnvironmentEndpoints:
             f"/api/v1/environments/{fake_env_id}", json=update_data
         )
 
-        assert response.status_code == 401
+        assert response.status_code == 403
 
-    async def test_update_environment_variables_only(self, auth_client, test_user):
+    async def test_update_environment_variables_only(self, client, authenticated_user):
         """Test updating only environment variables"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
                 "environment_variables": {"EXISTING_VAR": "existing_value"},
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -559,27 +568,32 @@ class TestEnvironmentEndpoints:
             }
         }
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 200
 
         # Verify the environment variables were updated
-        get_response = await auth_client.get(f"/api/v1/environments/{env_id}")
+        get_response = await client.get(
+            f"/api/v1/environments/{env_id}", headers=authenticated_user["headers"]
+        )
         assert get_response.status_code == 200
         # Note: environment_variables might not be returned in the response model
         # so we'll just check that the update was successful
 
-    async def test_update_environment_empty_data(self, auth_client, test_user):
+    async def test_update_environment_empty_data(self, client, authenticated_user):
         """Test updating environment with empty data"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -587,23 +601,26 @@ class TestEnvironmentEndpoints:
         # Update with empty data
         update_data = {}
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 200
 
     async def test_update_environment_status_valid_transition(
-        self, auth_client, test_user
+        self, client, authenticated_user
     ):
         """Test valid status transition (running -> stopped)"""
         # Create environment first and wait for it to be running
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -611,8 +628,10 @@ class TestEnvironmentEndpoints:
         # Update status from running to stopped
         update_data = {"status": "stopped"}
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 200
@@ -620,16 +639,17 @@ class TestEnvironmentEndpoints:
         assert data["status"] == "stopped"
 
     async def test_update_environment_status_invalid_transition(
-        self, auth_client, test_user
+        self, client, authenticated_user
     ):
         """Test invalid status transition (running -> creating)"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -637,55 +657,63 @@ class TestEnvironmentEndpoints:
         # Try invalid status transition (running -> creating)
         update_data = {"status": "creating"}
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 400
         assert "Cannot transition environment" in response.json()["detail"]
 
     async def test_update_environment_status_from_terminated(
-        self, auth_client, test_user
+        self, client, authenticated_user
     ):
         """Test that terminated environments cannot change status"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
 
         # First transition to terminated
         update_data = {"status": "terminated"}
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
         assert response.status_code == 200
 
         # Try to transition from terminated (should fail)
         update_data = {"status": "running"}
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 400
         assert "Cannot transition environment" in response.json()["detail"]
 
     async def test_update_environment_status_and_other_fields(
-        self, auth_client, test_user
+        self, client, authenticated_user
     ):
         """Test updating status along with other fields"""
         # Create environment first
-        create_response = await auth_client.post(
-            "/api/v1/environments/",
+        create_response = await client.post(
+            "/api/v1/environments",
             json={
                 "name": "test-env",
                 "template": "python",
             },
+            headers=authenticated_user["headers"],
         )
         assert create_response.status_code == 201
         env_id = create_response.json()["id"]
@@ -697,8 +725,10 @@ class TestEnvironmentEndpoints:
             "environment_variables": {"STATUS_UPDATE": "true"},
         }
 
-        response = await auth_client.put(
-            f"/api/v1/environments/{env_id}", json=update_data
+        response = await client.put(
+            f"/api/v1/environments/{env_id}",
+            json=update_data,
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == 200
