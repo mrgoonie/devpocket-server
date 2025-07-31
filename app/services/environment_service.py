@@ -2242,14 +2242,11 @@ class AsyncEnvironmentTaskManager:
             # Create namespace
             await self._create_namespace_with_timeout(v1_core, environment, timeout=30)
 
-            # Create PVCs in parallel
-            await self._create_pvcs_with_timeout(v1_core, environment, timeout=120)
-
-            # Wait for PVCs to be ready
-            await self._wait_for_pvcs_ready(v1_core, environment, timeout=300)
-
-            # Create deployment
-            await self._create_deployment_with_timeout(v1_apps, environment, timeout=60)
+            # Create PVCs and deployment simultaneously - let Kubernetes handle scheduling
+            await asyncio.gather(
+                self._create_pvcs_with_timeout(v1_core, environment, timeout=120),
+                self._create_deployment_with_timeout(v1_apps, environment, timeout=60),
+            )
 
             # Create service
             await self._create_service_with_timeout(v1_core, environment, timeout=30)
