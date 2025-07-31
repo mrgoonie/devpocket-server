@@ -71,21 +71,18 @@ class TemplateService:
                     "chown -R devpocket:devpocket /home/devpocket",
                     # Install Claude Code
                     "su - devpocket -c 'curl -fsSL https://claude.ai/cli/install.sh | bash'",
-                    # Install Gemini CLI (assuming npm package)
-                    # Note: @google/generative-ai-cli package removed due to 404 errors
-                    # "su - devpocket -c 'npm install -g @google/generative-ai-cli'",
-                    # Install Qwen Code (assuming it's available via pip)
+                    # Install Python tools
                     "su - devpocket -c 'pip3 install --user qwencoder-cli'",
-                    # Install Open Code (assuming VS Code CLI)
+                    # Install VS Code
                     "wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg",
                     "install -o root -g root -m 644 packages.microsoft.gpg /etc/apt/trusted.gpg.d/",
                     "echo 'deb [arch=amd64,arm64,armhf signed-by=/etc/apt/trusted.gpg.d/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main' > /etc/apt/sources.list.d/vscode.list",
                     "apt-get update",
                     "apt-get install -y code",
-                    # Add useful aliases and setup
-                    'su - devpocket -c \'echo "alias ll=\\"ls -la\\"" >> ~/.bashrc\'',
+                    # Add useful aliases with simpler syntax
+                    "su - devpocket -c 'echo \"alias ll=ls -la\" >> ~/.bashrc'",
                     "su - devpocket -c 'echo \"cd ~/workspace\" >> ~/.bashrc'",
-                    'su - devpocket -c \'echo "alias claude=\\"claude-code\\"" >> ~/.bashrc\'',
+                    "su - devpocket -c 'echo \"alias claude=claude-code\" >> ~/.bashrc'",
                 ],
                 "documentation_url": "https://claude.ai/code",
                 "icon_url": "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/ubuntu/ubuntu-plain.svg",
@@ -120,7 +117,7 @@ class TemplateService:
                     "echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
                     "mkdir -p /home/devpocket/workspace",
                     "chown -R devpocket:devpocket /home/devpocket",
-                    'su - devpocket -c \'echo "alias ll=\\"ls -la\\"" >> ~/.bashrc\'',
+                    "su - devpocket -c 'echo \"alias ll=ls -la\" >> ~/.bashrc'",
                     "su - devpocket -c 'echo \"cd ~/workspace\" >> ~/.bashrc'",
                 ],
                 "documentation_url": "https://ubuntu.com/server/docs",
@@ -164,7 +161,7 @@ class TemplateService:
                     "echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
                     "mkdir -p /home/devpocket/workspace",
                     "chown -R devpocket:devpocket /home/devpocket",
-                    'su - devpocket -c \'echo "alias ll="ls -la"" >> ~/.bashrc\'',
+                    "su - devpocket -c 'echo \"alias ll=ls -la\" >> ~/.bashrc'",
                     "su - devpocket -c 'echo \"cd ~/workspace\" >> ~/.bashrc'",
                 ],
                 "documentation_url": "https://docs.centos.org/",
@@ -200,7 +197,7 @@ class TemplateService:
                     "echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
                     "mkdir -p /home/devpocket/workspace",
                     "chown -R devpocket:devpocket /home/devpocket",
-                    'su - devpocket -c \'echo "alias ll=\\"ls -la\\"" >> ~/.bashrc\'',
+                    "su - devpocket -c 'echo \"alias ll=ls -la\" >> ~/.bashrc'",
                     "su - devpocket -c 'echo \"cd ~/workspace\" >> ~/.bashrc'",
                 ],
                 "documentation_url": "https://www.debian.org/doc/",
@@ -247,7 +244,7 @@ class TemplateService:
                     "mkdir -p /home/devpocket/workspace",
                     "chown -R devpocket:devpocket /home/devpocket",
                     "su - devpocket -c 'npm install -g nodemon typescript @types/node yarn'",
-                    'su - devpocket -c \'echo "alias ll=\\"ls -la\\"" >> ~/.bashrc\'',
+                    "su - devpocket -c 'echo \"alias ll=ls -la\" >> ~/.bashrc'",
                     "su - devpocket -c 'echo \"cd ~/workspace\" >> ~/.bashrc'",
                 ],
                 "documentation_url": "https://nodejs.org/en/docs/",
@@ -294,7 +291,7 @@ class TemplateService:
                     "chown -R devpocket:devpocket /home/devpocket",
                     "su - devpocket -c 'pip install --upgrade pip'",
                     "su - devpocket -c 'pip install flask fastapi uvicorn jupyter pandas numpy requests virtualenv'",
-                    'su - devpocket -c \'echo "alias ll=\\"ls -la\\"" >> ~/.bashrc\'',
+                    "su - devpocket -c 'echo \"alias ll=ls -la\" >> ~/.bashrc'",
                     "su - devpocket -c 'echo \"cd ~/workspace\" >> ~/.bashrc'",
                 ],
                 "documentation_url": "https://docs.python.org/3/",
