@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - dev/*
   workflow_dispatch:
 
 env:
@@ -26,7 +25,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -46,65 +45,67 @@ jobs:
         git config --global user.name "semantic-release"
         git config --global user.email "semantic-release@devpocket.com"
 
-    - name: Run Semantic Release
+    - name: Check if release is needed
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        REPOSITORY_USERNAME: __token__
-        REPOSITORY_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
       run: |
         # Check what the next version would be
         echo "Checking if release is needed..."
-        NEXT_VERSION=$(semantic-release version --print 2>/dev/null || echo "No release")
+        NEXT_VERSION=$(semantic-release version --print --noop 2>/dev/null || echo "No release")
 
         if [ "$NEXT_VERSION" = "No release" ] || echo "$NEXT_VERSION" | grep -q "No release will be made"; then
           echo "No release needed"
-          echo "RELEASE_MADE=false" >> $GITHUB_ENV
+          echo "RELEASE_NEEDED=false" >> $GITHUB_ENV
         else
-          echo "Making release with version: $NEXT_VERSION"
-          semantic-release version
-          echo "RELEASE_MADE=true" >> $GITHUB_ENV
+          echo "Release needed with version: $NEXT_VERSION"
+          echo "RELEASE_NEEDED=true" >> $GITHUB_ENV
+          echo "NEXT_VERSION=$NEXT_VERSION" >> $GITHUB_ENV
         fi
 
-    - name: Build Docker image if release was made
-      if: env.RELEASE_MADE == 'true' && github.ref == 'refs/heads/main'
+    - name: Create release branch and PR
+      if: env.RELEASE_NEEDED == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        REPOSITORY_USERNAME: __token__
+        REPOSITORY_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        # Get the newly created version tag
-        VERSION=$(git describe --tags --abbrev=0)
-        echo "Building Docker image for version: $VERSION"
+        # Create a release branch
+        RELEASE_BRANCH="release/v${{ env.NEXT_VERSION }}"
+        git checkout -b "$RELEASE_BRANCH"
 
-        # Build and tag the Docker image
-        docker build --platform linux/amd64 -t digitop/devpocket-api:$VERSION .
-        docker tag digitop/devpocket-api:$VERSION digitop/devpocket-api:latest
+        # Run semantic release on the branch (this will create the version bump)
+        semantic-release version --no-push --no-tag --no-vcs-release
 
-        # Optional: Add Docker Hub push here if needed
-        # docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PAT }}
-        # docker push digitop/devpocket-api:$VERSION
-        # docker push digitop/devpocket-api:latest
+        # Push the release branch
+        git push origin "$RELEASE_BRANCH"
 
-    - name: Deploy to production if release was made
-      if: env.RELEASE_MADE == 'true' && github.ref == 'refs/heads/main'
-      uses: "digitopvn/diginext-actions@v2"
-      with:
-        api_key: ${{ secrets.DX_API_KEY }}
-        cluster: dxupprod
-        registry: digitopdockerhub
-        deploy_env: prod
-        tail: false
-        port: 8000
+        # Create a pull request
+        gh pr create \
+          --title "chore(release): v${{ env.NEXT_VERSION }}" \
+          --body "Automated release PR for version ${{ env.NEXT_VERSION }}
+
+        This PR contains:
+        - Version bump to ${{ env.NEXT_VERSION }}
+        - Updated CHANGELOG.md
+        - Ready for production release
+
+        Once merged, the production deployment will be triggered automatically." \
+          --base main \
+          --head "$RELEASE_BRANCH" \
+          --label "release"
+
+        echo "RELEASE_BRANCH=$RELEASE_BRANCH" >> $GITHUB_ENV
+        echo "RELEASE_MADE=true" >> $GITHUB_ENV
+
 
     - name: Create release summary
       if: env.RELEASE_MADE == 'true'
       run: |
-        VERSION=$(git describe --tags --abbrev=0)
-        echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
-        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          echo "- **Deployed**: ✅ Production" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "- **Deployed**: ⏭️ Development only" >> $GITHUB_STEP_SUMMARY
-        fi
+        echo "## 📋 Release PR Created" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ env.NEXT_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ env.RELEASE_BRANCH }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: PR created for review" >> $GITHUB_STEP_SUMMARY
+        echo "- **Next**: Merge the PR to deploy to production" >> $GITHUB_STEP_SUMMARY
 
   notify-failure:
     name: Notify Release Failure
