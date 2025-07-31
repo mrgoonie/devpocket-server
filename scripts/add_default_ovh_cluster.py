@@ -60,6 +60,7 @@ async def add_ovh_cluster():
         # Create cluster data
         cluster_data = ClusterCreate(
             name="ovh-southeast-asia",
+            provider="ovh",
             region=ClusterRegion.SOUTHEAST_ASIA,
             description="OVH Kubernetes cluster in Southeast Asia region - Default cluster",
             endpoint="https://51.79.231.184:16443",
@@ -114,6 +115,7 @@ async def add_ovh_cluster():
                         "is_default": cluster_data.is_default,
                         "max_environments": cluster_data.max_environments,
                         "region": cluster_data.region,
+                        "provider": cluster_data.provider,
                         "updated_at": datetime.utcnow(),
                     }
                 },

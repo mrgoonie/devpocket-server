@@ -195,6 +195,19 @@ class ClusterService:
                 cluster_data["encrypted_kube_config"] = "test-encrypted-config"
             if "created_by" not in cluster_data:
                 cluster_data["created_by"] = ObjectId()
+            if "provider" not in cluster_data:
+                # Provide a default provider based on region or default to aws
+                region = cluster_data.get("region")
+                region_provider_map = {
+                    ClusterRegion.US_EAST: "aws",
+                    ClusterRegion.US_WEST: "aws",
+                    ClusterRegion.US_WEST_2: "aws",
+                    ClusterRegion.US_CENTRAL1: "gcp",
+                    ClusterRegion.EU_CENTRAL: "aws",
+                    ClusterRegion.ASIA_PACIFIC: "aws",
+                    ClusterRegion.SOUTHEAST_ASIA: "aws",
+                }
+                cluster_data["provider"] = region_provider_map.get(region, "aws")
 
             return ClusterInDB(**cluster_data)
         return None
@@ -331,6 +344,19 @@ class ClusterService:
                 cluster_data["encrypted_kube_config"] = "test-encrypted-config"
             if "created_by" not in cluster_data:
                 cluster_data["created_by"] = ObjectId()
+            if "provider" not in cluster_data:
+                # Provide a default provider based on region or default to aws
+                region = cluster_data.get("region")
+                region_provider_map = {
+                    ClusterRegion.US_EAST: "aws",
+                    ClusterRegion.US_WEST: "aws",
+                    ClusterRegion.US_WEST_2: "aws",
+                    ClusterRegion.US_CENTRAL1: "gcp",
+                    ClusterRegion.EU_CENTRAL: "aws",
+                    ClusterRegion.ASIA_PACIFIC: "aws",
+                    ClusterRegion.SOUTHEAST_ASIA: "aws",
+                }
+                cluster_data["provider"] = region_provider_map.get(region, "aws")
 
             return ClusterInDB(**cluster_data)
         return None
@@ -355,6 +381,20 @@ class ClusterService:
 
         if cluster_data:
             cluster_data["_id"] = str(cluster_data["_id"])
+
+            # Provide default provider if missing (for backwards compatibility)
+            if "provider" not in cluster_data:
+                region_provider_map = {
+                    ClusterRegion.US_EAST: "aws",
+                    ClusterRegion.US_WEST: "aws",
+                    ClusterRegion.US_WEST_2: "aws",
+                    ClusterRegion.US_CENTRAL1: "gcp",
+                    ClusterRegion.EU_CENTRAL: "aws",
+                    ClusterRegion.ASIA_PACIFIC: "aws",
+                    ClusterRegion.SOUTHEAST_ASIA: "aws",
+                }
+                cluster_data["provider"] = region_provider_map.get(region, "aws")
+
             return ClusterInDB(**cluster_data)
         return None
 
@@ -409,6 +449,19 @@ class ClusterService:
                 cluster_data["encrypted_kube_config"] = "test-encrypted-config"
             if "created_by" not in cluster_data:
                 cluster_data["created_by"] = ObjectId()
+            if "provider" not in cluster_data:
+                # Provide a default provider based on region or default to aws
+                region = cluster_data.get("region")
+                region_provider_map = {
+                    ClusterRegion.US_EAST: "aws",
+                    ClusterRegion.US_WEST: "aws",
+                    ClusterRegion.US_WEST_2: "aws",
+                    ClusterRegion.US_CENTRAL1: "gcp",
+                    ClusterRegion.EU_CENTRAL: "aws",
+                    ClusterRegion.ASIA_PACIFIC: "aws",
+                    ClusterRegion.SOUTHEAST_ASIA: "aws",
+                }
+                cluster_data["provider"] = region_provider_map.get(region, "aws")
 
             clusters.append(ClusterInDB(**cluster_data))
 
