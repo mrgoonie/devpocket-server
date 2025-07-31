@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.23 (2025-07-31)
+
+### Features
+
+- Add provider field to cluster model with backwards compatibility
+  ([`963e008`](https://github.com/mrgoonie/devpocket-server/commit/963e0088c8be067f716282a1c0d694a2b23bc73c))
+
+- Add provider field to ClusterCreate and ClusterInDB models - Add default provider mapping based on
+  region for backwards compatibility - Update cluster service methods to handle missing provider
+  field - Update OVH cluster script to include provider field - Add .mcp.json to gitignore - Update
+  project orchestrator agent documentation
+
+
 ## v0.1.0-dev.22 (2025-07-31)
 
 ### Bug Fixes
