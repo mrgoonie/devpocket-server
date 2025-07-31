@@ -8,7 +8,11 @@ httpx==0.26.0
 black==23.11.0
 flake8==6.1.0
 isort==5.12.0
+pre-commit==3.6.0
 
 # Test utilities
 factory-boy==3.3.0
 faker==20.1.0
+
+# Release management
+python-semantic-release==9.14.0

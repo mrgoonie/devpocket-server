@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import List, Optional
+
 from bson import ObjectId
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
 from .cluster import ClusterRegion
 
 
@@ -68,22 +70,22 @@ class UserUpdate(BaseModel):
 
 
 class UserInDB(UserBase):
-    id: str = Field(alias="_id")
+    id: PyObjectId = Field(alias="_id")
     hashed_password: str
     is_active: bool = True
     is_verified: bool = False
     google_id: Optional[str] = None
     avatar_url: Optional[str] = None
     subscription_plan: str = "free"  # free, starter, pro
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
     failed_login_attempts: int = 0
     locked_until: Optional[datetime] = None
+    email_verification_token: Optional[str] = None
+    email_verification_expires: Optional[datetime] = None
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
 class UserResponse(UserBase):
@@ -97,8 +99,8 @@ class UserResponse(UserBase):
 
 
 class UserLogin(BaseModel):
-    username_or_email: str
-    password: str
+    username_or_email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
 
 
 class Token(BaseModel):
@@ -106,6 +108,19 @@ class Token(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+    token: str = Field(..., min_length=1)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 
 class TokenData(BaseModel):

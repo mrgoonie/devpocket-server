@@ -17,7 +17,7 @@ scrape_configs:
       - targets: ['devpocket-api:8000']
     scrape_interval: 30s
     metrics_path: '/metrics'
-    
+
   # Add more monitoring targets as needed
   - job_name: 'nginx'
     static_configs:

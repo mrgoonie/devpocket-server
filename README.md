@@ -4,6 +4,8 @@
 
 DevPocket Server is a production-ready Python FastAPI backend that powers the DevPocket mobile-first cloud IDE. It provides secure, scalable development environments accessible from any mobile device.
 
+- **DevPocker Mobile App**: https://github.com/mrgoonie/devpocket-app
+
 ## ✨ Features
 
 ### 🔐 Authentication & Security
@@ -102,6 +104,22 @@ DEBUG=true
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
 
+#### Database Seeding
+```bash
+# Add a default cluster credentials to database
+export ENV_FILE=.env.prod
+python3 scripts/add_default_ovh_cluster.py
+
+# Show available default templates (no database required)
+python3 scripts/show_default_templates.py
+
+# Seed default environment templates (requires MongoDB)
+python3 scripts/seed_templates.py
+
+# Force reseed templates (removes existing ones first)
+python3 scripts/seed_templates.py --force
+```
+
 ### 3. Start with Docker Compose
 
 ```bash
@@ -177,8 +195,8 @@ POST /api/v1/auth/logout
 ### Environment Management
 
 ```http
-GET    /api/v1/environments/
-POST   /api/v1/environments/
+GET    /api/v1/environments
+POST   /api/v1/environments
 GET    /api/v1/environments/{id}
 DELETE /api/v1/environments/{id}
 POST   /api/v1/environments/{id}/start
@@ -202,7 +220,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "developer",
-    "email": "dev@example.com", 
+    "email": "dev@example.com",
     "password": "SecurePass123!",
     "full_name": "Developer User"
   }'
@@ -222,7 +240,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 #### Create Environment
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/environments/ \
+curl -X POST http://localhost:8000/api/v1/environments \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -321,7 +339,7 @@ See [k8s/README.md](k8s/README.md) for detailed Kubernetes deployment guide.
    ```bash
    # Generate secure secret key
    python -c "import secrets; print(secrets.token_urlsafe(32))"
-   
+
    # Use environment variables for all secrets
    export SECRET_KEY="your-secure-key"
    export GOOGLE_CLIENT_SECRET="your-oauth-secret"
@@ -359,7 +377,7 @@ Structured logging with configurable formats:
 # JSON logging for production
 LOG_FORMAT=json
 
-# Console logging for development  
+# Console logging for development
 LOG_FORMAT=console
 ```
 
@@ -501,7 +519,7 @@ jobs:
           pip install pytest pytest-asyncio httpx
       - name: Run tests
         run: pytest
-  
+
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -552,7 +570,7 @@ jobs:
 ### Code Style
 
 - **Black** for code formatting
-- **Flake8** for linting  
+- **Flake8** for linting
 - **Type hints** for all functions
 - **Docstrings** for public methods
 - **Async/await** for I/O operations
@@ -594,7 +612,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
    ```bash
    # Check MongoDB status
    docker-compose logs mongo
-   
+
    # Verify connection string
    echo $MONGODB_URL
    ```
@@ -603,7 +621,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
    ```bash
    # Rebuild containers
    docker-compose build --no-cache
-   
+
    # Check Python path
    python -c "import sys; print(sys.path)"
    ```
@@ -612,7 +630,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
    ```bash
    # Check nginx configuration
    docker-compose logs nginx
-   
+
    # Verify WebSocket headers
    curl -H "Upgrade: websocket" http://localhost:8000/api/v1/ws/terminal/test
    ```

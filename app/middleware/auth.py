@@ -1,12 +1,14 @@
-from fastapi import HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.core.security import verify_token
-from app.core.database import get_database
-from app.models.user import UserInDB
-from bson import ObjectId
+from datetime import datetime, timezone
 from typing import Optional
-from datetime import datetime
+
 import structlog
+from bson import ObjectId
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.core.database import get_database
+from app.core.security import verify_token
+from app.models.user import UserInDB
 
 logger = structlog.get_logger(__name__)
 security = HTTPBearer()
@@ -60,7 +62,7 @@ async def get_current_user(
             )
 
         # Check if account is locked
-        if user.locked_until and user.locked_until > datetime.utcnow():
+        if user.locked_until and user.locked_until > datetime.now(timezone.utc):
             logger.warning(f"Locked user attempted access: {user_id}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -61,6 +61,9 @@ docker-compose up -d mongo redis
 
 # Run development server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Add a default cluster credentials to database
+ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
 ```
 
 ### Docker Development
@@ -107,6 +110,66 @@ curl http://localhost:8000/health
 # Access interactive documentation
 open http://localhost:8000/docs
 ```
+
+### Database Seeding
+```bash
+# Add a default cluster credentials to database
+ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
+
+# Show available default templates (no database required)
+python3 scripts/show_default_templates.py
+
+# Show templates with production config
+ENV_FILE=.env.prod python3 scripts/show_default_templates.py
+
+# Seed default environment templates (requires MongoDB)
+python3 scripts/seed_templates.py
+
+# Seed with production config
+ENV_FILE=.env.prod python3 scripts/seed_templates.py
+
+# Force reseed templates (removes existing ones first)
+python3 scripts/seed_templates.py --force
+```
+
+### Release Management
+
+This project uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) for automated versioning and releases.
+
+```bash
+# Check what the next version would be (dry run)
+semantic-release version --noop --print
+
+# Create a new release locally (for testing)
+semantic-release version
+
+# Preview changelog for next version
+semantic-release changelog --unreleased
+```
+
+#### Commit Message Format
+
+Follow [Conventional Commits](https://conventionalcommits.org/) for automatic version bumping:
+
+- `feat:` - New features (minor version bump)
+- `fix:` - Bug fixes (patch version bump)
+- `perf:` - Performance improvements (patch version bump)
+- `BREAKING CHANGE:` - Breaking changes (major version bump)
+- `chore:`, `docs:`, `style:`, `refactor:`, `test:` - No version bump
+
+#### Automated Release Process
+
+Releases are automatically created when commits are pushed to:
+- `main` branch - Creates production releases
+- `dev/*` branches - Creates pre-release versions with `-dev` suffix
+
+The release workflow:
+1. Analyzes commit messages since last release
+2. Determines next version number using semantic versioning
+3. Updates version in `pyproject.toml`
+4. Generates/updates `CHANGELOG.md`
+5. Creates Git tag and GitHub release
+6. Builds and deploys Docker image to production (main branch only)
 
 ## Important Implementation Details
 
@@ -167,18 +230,7 @@ The application includes production-ready Docker configuration with:
 
 ## Development rules
 
-- always create/update `./plans/<FEATURE_NAME>_TASKS.md` to manage todos in every feature implementation/progress, update status of this file after finish each task
 - ask questions for clarification of uncleared requests
-- implement error catch handler and validation carefully
-- follow security best practices
-- focus on human-readable & developer-friendly when writing code
-- high standard of user experience
-- run app to check if it works, fix all issues if any
-- commit the code on the current branch after every task implemented (if it works)
-- Keep commits focused on the actual code changes
-- NEVER automatically add AI attribution signatures like:
-  "🤖 Generated with [Claude Code]"
-  "Co-Authored-By: Claude noreply@anthropic.com"
-  Any AI tool attribution or signature
-- Create clean, professional commit messages without AI references. Use conventional commit format.
-- use `context7` MCP tool for documentation during implementation
+- always create/update `./plans/<FEATURE_NAME>_TASKS.md` to manage todos in every feature implementation/progress, update status of this file after finish each task
+- use `./scripts/run-tests.sh` to run tests after finish each task, make sure all of them pass
+- always update the related docs in `./docs` folder if the code changes affect the docs

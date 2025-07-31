@@ -1,7 +1,8 @@
-from pydantic_settings import BaseSettings
-from pydantic import field_validator
-from typing import List, Optional, Union
 import secrets
+from typing import List, Optional, Union
+
+from pydantic import ConfigDict, field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -47,6 +48,10 @@ class Settings(BaseSettings):
     # Redis settings
     REDIS_URL: str = "redis://localhost:6379"
 
+    # Email settings
+    RESEND_API_KEY: Optional[str] = None
+    EMAIL_FROM: str = "noreply@devpocket.app"
+
     # Logging settings
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"
@@ -59,9 +64,7 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         return self.ENVIRONMENT == "development"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(env_file=".env", case_sensitive=True)
 
 
 settings = Settings()

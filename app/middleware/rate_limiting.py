@@ -1,9 +1,12 @@
-from fastapi import Request, HTTPException, status
+import os
+import time
+from typing import Dict, Optional
+
+import structlog
+from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Dict, Optional
-import time
-import structlog
+
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -17,6 +20,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.calls = calls  # Number of calls allowed
         self.period = period  # Time period in seconds
         self.requests: Dict[str, list] = {}
+        # Check if we're in a test environment
+        self.is_test_env = (
+            os.environ.get("TESTING", "false").lower() == "true"
+            or os.environ.get("ENVIRONMENT", "").lower() == "test"
+        )
 
     def get_client_ip(self, request: Request) -> str:
         """Extract client IP address"""
@@ -27,6 +35,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def is_rate_limited(self, client_ip: str) -> bool:
         """Check if client is rate limited"""
+        # Skip rate limiting in test environment
+        if self.is_test_env:
+            return False
+
         now = time.time()
 
         # Initialize client if not exists

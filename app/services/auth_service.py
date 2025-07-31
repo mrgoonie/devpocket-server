@@ -1,21 +1,23 @@
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
+import httpx
+import structlog
+from bson import ObjectId
 from fastapi import HTTPException, status
 from google.auth.transport import requests
 from google.oauth2 import id_token
-import httpx
-import structlog
 
 from app.core.config import settings
+from app.core.database import get_database
 from app.core.security import (
-    get_password_hash,
-    verify_password,
     create_access_token,
     create_refresh_token,
+    get_password_hash,
+    verify_password,
+    verify_token,
 )
-from app.core.database import get_database
-from app.models.user import UserCreate, UserInDB, UserLogin, Token, GoogleUserInfo
-from bson import ObjectId
+from app.models.user import GoogleUserInfo, Token, UserCreate, UserInDB, UserLogin
 
 logger = structlog.get_logger(__name__)
 
@@ -66,8 +68,8 @@ class AuthService:
                 "is_active": True,
                 "is_verified": False,
                 "subscription_plan": "free",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "failed_login_attempts": 0,
             }
 
@@ -110,12 +112,26 @@ class AuthService:
             user = UserInDB(**user_doc)
 
             # Check if account is locked
-            if user.locked_until and user.locked_until > datetime.utcnow():
-                logger.warning(f"Login attempt for locked account: {user.username}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Account is temporarily locked due to too many failed attempts",
-                )
+            if user.locked_until:
+                # Ensure both datetimes are timezone-aware for comparison
+                locked_until = user.locked_until
+                current_time = datetime.now(timezone.utc)
+
+                # Make locked_until timezone-aware if it isn't
+                if locked_until.tzinfo is None:
+                    locked_until = locked_until.replace(tzinfo=timezone.utc)
+
+                # Make current_time timezone-naive if locked_until is timezone-naive
+                # This shouldn't happen due to above, but defensive programming
+                if locked_until.tzinfo is None and current_time.tzinfo is not None:
+                    current_time = current_time.replace(tzinfo=None)
+
+                if locked_until > current_time:
+                    logger.warning(f"Login attempt for locked account: {user.username}")
+                    raise HTTPException(
+                        status_code=status.HTTP_423_LOCKED,
+                        detail="Account is temporarily locked due to too many failed attempts",
+                    )
 
             # Verify password
             if not verify_password(login_data.password, user.hashed_password):
@@ -132,7 +148,7 @@ class AuthService:
                         "$set": {
                             "failed_login_attempts": 0,
                             "locked_until": None,
-                            "last_login": datetime.utcnow(),
+                            "last_login": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -140,7 +156,7 @@ class AuthService:
                 # Just update last login
                 await self.db.users.update_one(
                     {"_id": ObjectId(user.id)},
-                    {"$set": {"last_login": datetime.utcnow()}},
+                    {"$set": {"last_login": datetime.now(timezone.utc)}},
                 )
 
             logger.info(f"User authenticated successfully: {user.username}")
@@ -165,7 +181,7 @@ class AuthService:
             # Lock account after 5 failed attempts
             if failed_attempts >= 5:
                 lock_duration = timedelta(minutes=30)  # 30 minutes lock
-                update_data["locked_until"] = datetime.utcnow() + lock_duration
+                update_data["locked_until"] = datetime.now(timezone.utc) + lock_duration
                 logger.warning(
                     f"Account locked for user {user_id} due to {failed_attempts} failed attempts"
                 )
@@ -176,6 +192,20 @@ class AuthService:
 
         except Exception as e:
             logger.error(f"Error handling failed login: {e}")
+
+    async def get_user_by_id(self, user_id: str) -> Optional[UserInDB]:
+        """Get user by ID"""
+        try:
+            user_doc = await self.db.users.find_one({"_id": ObjectId(user_id)})
+            if not user_doc:
+                return None
+
+            user_doc = self._convert_objectid_to_string(user_doc)
+            return UserInDB(**user_doc)
+
+        except Exception as e:
+            logger.error(f"Error getting user by ID: {e}")
+            return None
 
     async def create_tokens(self, user: UserInDB) -> Token:
         """Create access and refresh tokens for user"""
@@ -210,6 +240,116 @@ class AuthService:
                 detail="Could not create authentication tokens",
             )
 
+    async def refresh_tokens(self, refresh_token: str) -> Token:
+        """Refresh access token using refresh token"""
+        try:
+            # Verify refresh token
+            payload = verify_token(refresh_token)
+            if not payload:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
+
+            # Check if it's actually a refresh token
+            if payload.get("type") != "refresh_token":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type",
+                )
+
+            # Get user from database
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token payload",
+                )
+
+            user = await self.get_user_by_id(user_id)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                )
+
+            # Create new tokens
+            return await self.create_tokens(user)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error refreshing tokens: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not refresh tokens",
+            )
+
+    async def generate_email_verification_token(self, user_id: str) -> str:
+        """Generate email verification token for user"""
+        try:
+            import secrets
+            from datetime import datetime, timedelta, timezone
+
+            # Generate secure random token
+            token = secrets.token_urlsafe(32)
+            expires = datetime.now(timezone.utc) + timedelta(hours=24)  # 24 hour expiry
+
+            # Update user with verification token
+            await self.db.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "email_verification_token": token,
+                        "email_verification_expires": expires,
+                    }
+                },
+            )
+
+            return token
+
+        except Exception as e:
+            logger.error(f"Error generating email verification token: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not generate verification token",
+            )
+
+    async def verify_email_token(self, token: str) -> bool:
+        """Verify email verification token and mark user as verified"""
+        try:
+            from datetime import datetime, timezone
+
+            # Find user with this token (regardless of expiry)
+            user = await self.db.users.find_one({"email_verification_token": token})
+
+            if not user:
+                return False
+
+            # Check if token is expired
+            expires = user.get("email_verification_expires")
+            if expires and expires < datetime.now(timezone.utc):
+                return False
+
+            # Mark user as verified and clear verification token
+            await self.db.users.update_one(
+                {"_id": user["_id"]},
+                {
+                    "$set": {
+                        "is_verified": True,
+                        "email_verification_token": None,
+                        "email_verification_expires": None,
+                    }
+                },
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error verifying email token: {e}")
+            # Return False instead of raising exception to indicate invalid token
+            return False
+
     async def google_login(self, token: str) -> UserInDB:
         """Authenticate user with Google OAuth token"""
         try:
@@ -240,7 +380,7 @@ class AuthService:
                     verified_email=idinfo.get("email_verified", False),
                 )
 
-            except ValueError as e:
+            except (ValueError, Exception) as e:
                 logger.warning(f"Invalid Google token: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -254,7 +394,7 @@ class AuthService:
                 # Update last login
                 await self.db.users.update_one(
                     {"_id": user_doc["_id"]},
-                    {"$set": {"last_login": datetime.utcnow()}},
+                    {"$set": {"last_login": datetime.now(timezone.utc)}},
                 )
                 user_doc = self._convert_objectid_to_string(user_doc)
                 user = UserInDB(**user_doc)
@@ -273,7 +413,7 @@ class AuthService:
                             "google_id": google_user.id,
                             "avatar_url": google_user.picture,
                             "is_verified": True,  # Google emails are verified
-                            "last_login": datetime.utcnow(),
+                            "last_login": datetime.now(timezone.utc),
                         }
                     },
                 )
@@ -305,9 +445,9 @@ class AuthService:
                 "is_active": True,
                 "is_verified": True,  # Google emails are verified
                 "subscription_plan": "free",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "last_login": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "last_login": datetime.now(timezone.utc),
                 "failed_login_attempts": 0,
             }
 

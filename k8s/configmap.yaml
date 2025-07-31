@@ -16,18 +16,3 @@ data:
   CONTAINER_CPU_LIMIT: "1000m"
   CONTAINER_MEMORY_LIMIT: "2Gi"
   CONTAINER_STORAGE_LIMIT: "10Gi"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: devpocket-secrets
-  namespace: devpocket-prod
-type: Opaque
-data:
-  # These will be populated by the CI/CD pipeline
-  # Values should be base64 encoded
-  SECRET_KEY: ""
-  MONGODB_URL: ""
-  REDIS_URL: ""
-  GOOGLE_CLIENT_ID: ""
-  GOOGLE_CLIENT_SECRET: ""

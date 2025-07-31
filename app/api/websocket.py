@@ -1,24 +1,20 @@
-from fastapi import (
-    APIRouter,
-    WebSocket,
-    WebSocketDisconnect,
-    HTTPException,
-    Depends,
-    Query,
-)
-from fastapi.websockets import WebSocketState
-import asyncio
 import json
 import uuid
-import structlog
 from typing import Dict, Optional
 
+import structlog
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from kubernetes import client
+from kubernetes.client.rest import ApiException
+from kubernetes.stream import stream
+
 from app.core.database import get_database
-from app.services.environment_service import environment_service
-from app.middleware.auth import get_current_user
-from app.middleware.rate_limiting import websocket_rate_limiter
 from app.core.security import verify_token
+from app.middleware.rate_limiting import websocket_rate_limiter
+from app.models.cluster import ClusterRegion
 from app.models.user import UserInDB
+from app.services.environment_service import environment_service
+from app.services.pty_service import pty_manager
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -57,20 +53,28 @@ class WebSocketConnectionManager:
     async def send_personal_message(self, message: str, connection_id: str):
         """Send message to specific connection"""
         if connection_id in self.active_connections:
-            websocket = self.active_connections[connection_id]
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.send_text(message)
+            try:
+                await self.active_connections[connection_id].send_text(message)
+            except Exception as e:
+                logger.error(f"Error sending message to {connection_id}: {e}")
 
-    async def send_binary_message(self, data: bytes, connection_id: str):
-        """Send binary data to specific connection"""
-        if connection_id in self.active_connections:
-            websocket = self.active_connections[connection_id]
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.send_bytes(data)
+    async def send_user_message(self, message: str, user_id: str):
+        """Send message to all connections of a specific user"""
+        if user_id in self.user_connections:
+            for connection_id in self.user_connections[user_id]:
+                await self.send_personal_message(message, connection_id)
 
-    def get_user_connections(self, user_id: str) -> set:
-        """Get all connection IDs for a user"""
-        return self.user_connections.get(user_id, set())
+    async def broadcast_to_user(self, message: str, user_id: str):
+        """Broadcast message to all connections of a specific user"""
+        if user_id in self.user_connections:
+            for connection_id in self.user_connections[user_id]:
+                await self.send_personal_message(message, connection_id)
+
+    def get_user_connection_count(self, user_id: str) -> int:
+        """Get number of active connections for a user"""
+        if user_id in self.user_connections:
+            return len(self.user_connections[user_id])
+        return 0
 
 
 # Global connection manager
@@ -93,7 +97,9 @@ async def authenticate_websocket(token: str, db) -> Optional[UserInDB]:
             return None
 
         # Get user from database
-        user_doc = await db.users.find_one({"_id": user_id})
+        from bson import ObjectId
+
+        user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
         if user_doc is None:
             return None
 
@@ -112,34 +118,58 @@ async def websocket_terminal(
     token: Optional[str] = Query(None),
     db=Depends(get_database),
 ):
-    """WebSocket endpoint for terminal access"""
+    """WebSocket endpoint for PTY terminal access"""
+    logger.info(f"WebSocket PTY handler called for environment: {environment_id}")
     connection_id = str(uuid.uuid4())
     user = None
+    pty_session_id = None
 
     try:
+        logger.info(
+            f"WebSocket terminal: Starting PTY connection for env {environment_id}"
+        )
+
         # Authenticate user
+        logger.info(
+            f"WebSocket terminal: Authenticating token: {token[:20] if token else 'None'}..."
+        )
         user = await authenticate_websocket(token, db)
         if not user:
+            logger.error("WebSocket terminal: Authentication failed")
             await websocket.close(code=1008, reason="Authentication failed")
             return
+        logger.info(f"WebSocket terminal: User authenticated: {user.username}")
 
         # Check rate limits
+        logger.info(f"WebSocket terminal: Checking rate limits for user {user.id}")
         if not websocket_rate_limiter.check_connection_limit(str(user.id)):
+            logger.error(f"WebSocket terminal: Rate limit exceeded for user {user.id}")
             await websocket.close(code=1008, reason="Too many connections")
             return
+        logger.info("WebSocket terminal: Rate limit check passed")
 
         # Verify environment access
+        logger.info("WebSocket terminal: Verifying environment access")
         environment_service.set_database(db)
         environment = await environment_service.get_environment(
             environment_id, str(user.id)
         )
         if not environment:
+            logger.error(
+                f"WebSocket terminal: Environment {environment_id} not found for user {user.id}"
+            )
             await websocket.close(code=1008, reason="Environment not found")
             return
+        logger.info(f"WebSocket terminal: Environment found: {environment.name}")
 
-        if environment.status != "running":
-            await websocket.close(code=1008, reason="Environment not running")
+        # Allow connections for running environments or environments currently installing
+        if environment.status not in ["running", "installing"]:
+            logger.error(
+                f"WebSocket terminal: Environment not ready: {environment.status}"
+            )
+            await websocket.close(code=1008, reason="Environment not ready")
             return
+        logger.info(f"WebSocket terminal: Environment status is {environment.status}")
 
         # Accept connection
         await connection_manager.connect(websocket, connection_id, str(user.id))
@@ -161,11 +191,81 @@ async def websocket_terminal(
                 "name": environment.name,
                 "template": environment.template.value,
                 "status": environment.status.value,
+                "installation_completed": environment.installation_completed,
+                "pty_enabled": environment.status.value == "running",
             },
         }
         await connection_manager.send_personal_message(
             json.dumps(welcome_msg), connection_id
         )
+
+        # Create PTY session only if environment is running
+        pty_session_id = None
+        if environment.status.value == "running":
+            pty_session_id = f"pty_{connection_id}"
+
+            def pty_output_callback(data: str):
+                """Callback for PTY output"""
+                try:
+                    import asyncio
+
+                    # Create output message
+                    output_msg = {
+                        "type": "output",
+                        "data": data,
+                    }
+
+                    # Get the current event loop from the main thread
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Schedule the coroutine to run in the event loop
+                            asyncio.create_task(
+                                connection_manager.send_personal_message(
+                                    json.dumps(output_msg), connection_id
+                                )
+                            )
+                        else:
+                            # If no loop is running, run it
+                            loop.run_until_complete(
+                                connection_manager.send_personal_message(
+                                    json.dumps(output_msg), connection_id
+                                )
+                            )
+                    except RuntimeError:
+                        # No event loop available, create a new one
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(
+                            connection_manager.send_personal_message(
+                                json.dumps(output_msg), connection_id
+                            )
+                        )
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"Error sending PTY output: {e}")
+
+            # Start PTY session
+            pty_success = await pty_manager.create_session(
+                pty_session_id,
+                environment_id,
+                str(user.id),
+                pty_output_callback,
+                shell_command="su - devpocket",
+            )
+
+            if not pty_success:
+                logger.error(f"Failed to create PTY session for {environment_id}")
+                await websocket.close(
+                    code=1008, reason="Failed to create terminal session"
+                )
+                return
+
+            logger.info(f"PTY session created: {pty_session_id}")
+        else:
+            logger.info(
+                f"Environment is installing, PTY session will be created once installation completes"
+            )
 
         # Main message loop
         while True:
@@ -195,28 +295,55 @@ async def websocket_terminal(
 
                 # Handle different message types
                 if message.get("type") == "input":
-                    # Terminal input - forward to container
-                    # In a real implementation, this would be sent to the actual container
-                    # For now, we'll echo it back as a simulation
-                    response = {
-                        "type": "output",
-                        "data": f"$ {message.get('data', '')}\nCommand executed (simulated)\n",
-                    }
+                    # Terminal input - send to PTY only if session exists
+                    if pty_session_id:
+                        input_data = message.get("data", "")
+                        success = await pty_manager.write_to_session(
+                            pty_session_id, input_data
+                        )
+
+                        if not success:
+                            await connection_manager.send_personal_message(
+                                json.dumps(
+                                    {
+                                        "type": "error",
+                                        "message": "Failed to send input to terminal",
+                                    }
+                                ),
+                                connection_id,
+                            )
+                    else:
+                        # Environment is still installing
+                        await connection_manager.send_personal_message(
+                            json.dumps(
+                                {
+                                    "type": "info",
+                                    "message": "Environment is still installing. Terminal will be available once installation completes.",
+                                }
+                            ),
+                            connection_id,
+                        )
+
+                elif message.get("type") == "ping":
+                    # Respond to ping
+                    pong_response = {"type": "pong"}
                     await connection_manager.send_personal_message(
-                        json.dumps(response), connection_id
+                        json.dumps(pong_response), connection_id
                     )
 
                 elif message.get("type") == "resize":
-                    # Terminal resize
-                    cols = message.get("cols", 80)
-                    rows = message.get("rows", 24)
-                    logger.info(f"Terminal resize: {cols}x{rows}")
+                    # Handle terminal resize only if PTY session exists
+                    if pty_session_id:
+                        cols = message.get("cols", 80)
+                        rows = message.get("rows", 24)
 
-                elif message.get("type") == "ping":
-                    # Ping/pong for keepalive
-                    await connection_manager.send_personal_message(
-                        json.dumps({"type": "pong"}), connection_id
-                    )
+                        success = await pty_manager.resize_session(
+                            pty_session_id, cols, rows
+                        )
+                        logger.debug(
+                            f"Terminal resize: {cols}x{rows}, success: {success}"
+                        )
+                    # Ignore resize requests for installing environments
 
             except WebSocketDisconnect:
                 logger.info(f"WebSocket client disconnected: {connection_id}")
@@ -231,17 +358,30 @@ async def websocket_terminal(
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
         try:
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1011, reason="Internal server error")
-        except:
+            await websocket.close(code=1008, reason="Internal server error")
+        except Exception:
             pass
 
     finally:
-        # Cleanup
+        # Cleanup PTY session
+        if pty_session_id:
+            try:
+                await pty_manager.close_session(pty_session_id)
+                logger.info(f"Cleaned up PTY session: {pty_session_id}")
+            except Exception as e:
+                logger.error(f"Error cleaning up PTY session: {e}")
+
+        # Cleanup WebSocket
+        connection_manager.disconnect(connection_id, str(user.id) if user else "")
         if user:
-            connection_manager.disconnect(connection_id, str(user.id))
             websocket_rate_limiter.remove_connection(str(user.id))
-            await environment_service.remove_websocket_session(connection_id)
+            # Clean up WebSocket session
+            try:
+                await environment_service.cleanup_websocket_session(
+                    str(user.id), environment_id, connection_id
+                )
+            except Exception as e:
+                logger.error(f"Error cleaning up WebSocket session: {e}")
 
 
 @router.websocket("/logs/{environment_id}")
@@ -249,10 +389,9 @@ async def websocket_logs(
     websocket: WebSocket,
     environment_id: str,
     token: Optional[str] = Query(None),
-    follow: bool = Query(True),
     db=Depends(get_database),
 ):
-    """WebSocket endpoint for streaming environment logs"""
+    """WebSocket endpoint for environment logs"""
     connection_id = str(uuid.uuid4())
     user = None
 
@@ -261,6 +400,11 @@ async def websocket_logs(
         user = await authenticate_websocket(token, db)
         if not user:
             await websocket.close(code=1008, reason="Authentication failed")
+            return
+
+        # Check rate limits
+        if not websocket_rate_limiter.check_connection_limit(str(user.id)):
+            await websocket.close(code=1008, reason="Too many connections")
             return
 
         # Verify environment access
@@ -275,63 +419,59 @@ async def websocket_logs(
         # Accept connection
         await connection_manager.connect(websocket, connection_id, str(user.id))
 
+        # Create WebSocket session
+        await environment_service.create_websocket_session(
+            str(user.id), environment_id, connection_id
+        )
+
         logger.info(f"Logs WebSocket connected for environment {environment_id}")
 
-        # Send initial logs (simulated)
-        initial_logs = [
-            "2024-01-01 12:00:00 [INFO] Environment starting...",
-            "2024-01-01 12:00:01 [INFO] Container initialized",
-            "2024-01-01 12:00:02 [INFO] Ready for connections",
-        ]
+        # Send welcome message
+        welcome_msg = {
+            "type": "welcome",
+            "message": f"Connected to {environment.name} logs",
+        }
+        await connection_manager.send_personal_message(
+            json.dumps(welcome_msg), connection_id
+        )
 
-        for log_line in initial_logs:
-            await connection_manager.send_personal_message(
-                json.dumps(
-                    {
-                        "type": "log",
-                        "timestamp": "2024-01-01T12:00:00Z",
-                        "level": "info",
-                        "message": log_line,
-                    }
-                ),
-                connection_id,
-            )
+        # Main message loop for log streaming
+        while True:
+            try:
+                # For now, this is a placeholder - in a real implementation,
+                # you would stream actual logs from the environment
+                data = await websocket.receive_text()
+                message = json.loads(data)
 
-        if follow:
-            # Keep connection alive and simulate new logs
-            while True:
-                await asyncio.sleep(30)  # Send a log every 30 seconds
+                if message.get("type") == "ping":
+                    pong_response = {"type": "pong"}
+                    await connection_manager.send_personal_message(
+                        json.dumps(pong_response), connection_id
+                    )
 
-                if connection_id not in connection_manager.active_connections:
-                    break
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket logs client disconnected: {connection_id}")
+                break
+            except Exception as e:
+                logger.error(f"WebSocket logs error: {e}")
+                break
 
-                # Simulate a new log entry
-                await connection_manager.send_personal_message(
-                    json.dumps(
-                        {
-                            "type": "log",
-                            "timestamp": "2024-01-01T12:00:00Z",
-                            "level": "info",
-                            "message": "Heartbeat - system running normally",
-                        }
-                    ),
-                    connection_id,
-                )
-        else:
-            # Just send logs and close
-            await asyncio.sleep(1)
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1000, reason="Log stream complete")
-
-    except WebSocketDisconnect:
-        logger.info(f"Logs WebSocket disconnected: {connection_id}")
     except Exception as e:
-        logger.error(f"Logs WebSocket error: {e}")
+        logger.error(f"WebSocket logs connection error: {e}")
         try:
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1011, reason="Internal server error")
-        except:
+            await websocket.close(code=1008, reason="Internal server error")
+        except Exception:
             pass
+
     finally:
+        # Cleanup
+        connection_manager.disconnect(connection_id, str(user.id) if user else "")
         if user:
-            connection_manager.disconnect(connection_id, str(user.id))
+            websocket_rate_limiter.remove_connection(str(user.id))
+            # Clean up WebSocket session
+            try:
+                await environment_service.cleanup_websocket_session(
+                    str(user.id), environment_id, connection_id
+                )
+            except Exception as e:
+                logger.error(f"Error cleaning up WebSocket logs session: {e}")

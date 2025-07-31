@@ -1,18 +1,20 @@
+import time
+from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from contextlib import asynccontextmanager
-import time
-import structlog
 
+from app.api import auth, clusters, environments, templates, websocket
 from app.core.config import settings
-from app.core.database import connect_to_mongo, close_mongo_connection
+from app.core.database import close_mongo_connection, connect_to_mongo
 from app.core.logging import configure_logging
 from app.core.security import SecurityHeaders
 from app.middleware.rate_limiting import RateLimitMiddleware
-from app.api import auth, environments, websocket, clusters
+from app.middleware.slash_redirect import TrailingSlashRedirectMiddleware
 
 # Configure logging
 logger = configure_logging()
@@ -44,27 +46,21 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="""
     **DevPocket API** - The mobile-first cloud IDE backend
-    
+
     ## Features
-    
+
     * **User Authentication** - JWT and Google OAuth support
     * **Environment Management** - Create, manage, and connect to development environments
     * **WebSocket Terminal** - Real-time terminal access to your environments
     * **Resource Monitoring** - Track CPU, memory, and storage usage
     * **Multi-tenant** - Secure isolation between users
-    
+
     ## Authentication
-    
+
     Most endpoints require authentication using JWT tokens. Include the token in the Authorization header:
     ```
     Authorization: Bearer <your-jwt-token>
     ```
-    
-    ## Subscription Plans
-    
-    - **Free**: 1 environment, basic resources
-    - **Starter**: 3 environments, increased resources  
-    - **Pro**: 10 environments, premium resources
     """,
     version="1.0.0",
     lifespan=lifespan,
@@ -96,13 +92,16 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 
+# Add trailing slash redirect middleware (should be early in the stack)
+# app.add_middleware(TrailingSlashRedirectMiddleware)
+
 # Add rate limiting middleware
-app.add_middleware(RateLimitMiddleware, calls=100, period=60)  # 100 requests per minute
+# app.add_middleware(RateLimitMiddleware, calls=100, period=60)  # 100 requests per minute
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"],  # Allow all origins for testing
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
@@ -134,6 +133,12 @@ app.include_router(
     clusters.router,
     prefix="/api/v1/clusters",
     tags=["Clusters"],
+)
+
+app.include_router(
+    templates.router,
+    prefix="/api/v1/templates",
+    tags=["Templates"],
 )
 
 
@@ -199,6 +204,9 @@ async def readiness_check():
         from app.core.database import db
 
         # Check database connection
+        if db.client is None:
+            raise Exception("Database client not initialized")
+
         await db.client.admin.command("ping")
 
         return {"status": "ready", "checks": {"database": "healthy"}}
