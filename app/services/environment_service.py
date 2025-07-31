@@ -257,7 +257,7 @@ class EnvironmentService:
             return self._create_resilient_startup_script(basic_commands)
 
     def _create_resilient_startup_script(self, commands: List[str]) -> str:
-        """Create a resilient startup script that handles failures gracefully with enhanced error handling"""
+        """Create a resilient startup script that handles failures gracefully with simplified error handling"""
 
         # Separate critical commands (must succeed) from optional commands
         critical_commands = []
@@ -280,198 +280,150 @@ class EnvironmentService:
             else:
                 optional_commands.append(cmd)
 
-        # Create the resilient script
-        script_parts = [
-            "#!/bin/bash",
-            "set -e",  # Exit on error for critical commands only
-            "",
-            "# Initialize log file and status tracking",
-            "LOG_FILE=/var/log/devpocket-init.log",
-            "STATUS_FILE=/tmp/devpocket-status",
-            "PROGRESS_FILE=/tmp/devpocket-progress",
-            "echo '=== DevPocket Environment Initialization Started ===' | tee $LOG_FILE",
-            'echo "Timestamp: $(date)" | tee -a $LOG_FILE',
-            "echo 'INITIALIZING' > $STATUS_FILE",
-            "echo '0' > $PROGRESS_FILE",
-            "",
-            "# Function to update progress",
-            "update_progress() {",
-            '    echo "$1" > $PROGRESS_FILE',
-            '    echo "[PROGRESS] $1% - $2" | tee -a $LOG_FILE',
-            "}",
-            "",
-            "# Function to validate package availability before installation",
-            "validate_package() {",
-            '    local cmd="$1"',
-            '    if echo "$cmd" | grep -q "npm install.*@"; then',
-            "        # Extract npm package name",
-            "        local package=$(echo \"$cmd\" | sed -n 's/.*npm install[^@]*\\(@[^@]*\\/[^@]*\\).*/\\1/p')",
-            '        if [ -n "$package" ]; then',
-            '            echo "[VALIDATE] Checking npm package: $package" | tee -a $LOG_FILE',
-            '            if ! npm view "$package" version &>/dev/null; then',
-            '                echo "[VALIDATE] WARNING: npm package $package not found, skipping" | tee -a $LOG_FILE',
-            "                return 1",
-            "            fi",
-            "        fi",
-            '    elif echo "$cmd" | grep -q "pip.*install"; then',
-            "        # Extract pip package name (basic validation)",
-            "        local package=$(echo \"$cmd\" | sed -n 's/.*pip[0-9]\\? install[^a-zA-Z]*\\([a-zA-Z0-9_-]*\\).*/\\1/p')",
-            '        if [ -n "$package" ] && [ "$package" != "upgrade" ] && [ "$package" != "user" ]; then',
-            '            echo "[VALIDATE] Checking pip package: $package" | tee -a $LOG_FILE',
-            '            if ! python3 -m pip index versions "$package" &>/dev/null; then',
-            '                echo "[VALIDATE] WARNING: pip package $package might not be available, proceeding anyway" | tee -a $LOG_FILE',
-            "            fi",
-            "        fi",
-            "    fi",
-            "    return 0",
-            "}",
-            "",
-            "# Function to log and execute critical commands with retry",
-            "execute_critical() {",
-            "    local max_retries=3",
-            "    local retry_count=0",
-            '    local cmd="$1"',
-            "    ",
-            "    while [ $retry_count -lt $max_retries ]; do",
-            '        echo "[CRITICAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE',
-            '        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then',
-            '            echo "[CRITICAL] SUCCESS: $cmd" | tee -a $LOG_FILE',
-            "            return 0",
-            "        else",
-            "            retry_count=$((retry_count + 1))",
-            "            if [ $retry_count -lt $max_retries ]; then",
-            '                echo "[CRITICAL] RETRY: $cmd (attempt $retry_count failed, waiting 5s)" | tee -a $LOG_FILE',
-            "                sleep 5",
-            "            else",
-            '                echo "[CRITICAL] FAILED: $cmd (all $max_retries attempts failed)" | tee -a $LOG_FILE',
-            '                echo "[CRITICAL] Container initialization failed. Exiting." | tee -a $LOG_FILE',
-            "                echo 'ERROR' > $STATUS_FILE",
-            "                exit 1",
-            "            fi",
-            "        fi",
-            "    done",
-            "}",
-            "",
-            "# Function to log and execute optional commands with retry and validation",
-            "execute_optional() {",
-            "    local max_retries=2",
-            "    local retry_count=0",
-            '    local cmd="$1"',
-            "    ",
-            "    # Validate package availability first",
-            '    if ! validate_package "$cmd"; then',
-            '        echo "[OPTIONAL] SKIPPED: $cmd (package validation failed)" | tee -a $LOG_FILE',
-            "        return 1",
-            "    fi",
-            "    ",
-            "    while [ $retry_count -lt $max_retries ]; do",
-            '        echo "[OPTIONAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE',
-            '        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then',
-            '            echo "[OPTIONAL] SUCCESS: $cmd" | tee -a $LOG_FILE',
-            "            return 0",
-            "        else",
-            "            retry_count=$((retry_count + 1))",
-            "            if [ $retry_count -lt $max_retries ]; then",
-            '                echo "[OPTIONAL] RETRY: $cmd (attempt $retry_count failed, waiting 3s)" | tee -a $LOG_FILE',
-            "                sleep 3",
-            "            else",
-            '                echo "[OPTIONAL] FAILED: $cmd (all $max_retries attempts failed, continuing anyway)" | tee -a $LOG_FILE',
-            "                return 1",
-            "            fi",
-            "        fi",
-            "    done",
-            "}",
-            "",
-            "# Execute critical commands (must succeed)",
-            "echo '=== Executing Critical Setup Commands ===' | tee -a $LOG_FILE",
-            "update_progress 10 'Starting critical setup'",
-        ]
+        # Create a base64-encoded script to avoid escaping issues
+        script_content = f"""#!/bin/bash
+set -e
+
+# Initialize log file and status tracking
+LOG_FILE=/var/log/devpocket-init.log
+STATUS_FILE=/tmp/devpocket-status
+PROGRESS_FILE=/tmp/devpocket-progress
+
+echo '=== DevPocket Environment Initialization Started ===' | tee $LOG_FILE
+echo "Timestamp: $(date)" | tee -a $LOG_FILE
+echo 'INITIALIZING' > $STATUS_FILE
+echo '0' > $PROGRESS_FILE
+
+# Function to update progress
+update_progress() {{
+    echo "$1" > $PROGRESS_FILE
+    echo "[PROGRESS] $1% - $2" | tee -a $LOG_FILE
+}}
+
+# Function to execute critical commands with retry
+execute_critical() {{
+    local max_retries=3
+    local retry_count=0
+    local cmd="$1"
+
+    while [ $retry_count -lt $max_retries ]; do
+        echo "[CRITICAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE
+        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then
+            echo "[CRITICAL] SUCCESS: $cmd" | tee -a $LOG_FILE
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo "[CRITICAL] RETRY: $cmd (attempt $retry_count failed, waiting 5s)" | tee -a $LOG_FILE
+                sleep 5
+            else
+                echo "[CRITICAL] FAILED: $cmd (all $max_retries attempts failed)" | tee -a $LOG_FILE
+                echo "[CRITICAL] Container initialization failed. Exiting." | tee -a $LOG_FILE
+                echo 'ERROR' > $STATUS_FILE
+                exit 1
+            fi
+        fi
+    done
+}}
+
+# Function to execute optional commands
+execute_optional() {{
+    local max_retries=2
+    local retry_count=0
+    local cmd="$1"
+
+    while [ $retry_count -lt $max_retries ]; do
+        echo "[OPTIONAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE
+        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then
+            echo "[OPTIONAL] SUCCESS: $cmd" | tee -a $LOG_FILE
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo "[OPTIONAL] RETRY: $cmd (attempt $retry_count failed, waiting 3s)" | tee -a $LOG_FILE
+                sleep 3
+            else
+                echo "[OPTIONAL] FAILED: $cmd (all $max_retries attempts failed, continuing anyway)" | tee -a $LOG_FILE
+                return 1
+            fi
+        fi
+    done
+}}
+
+# Execute critical commands (must succeed)
+echo '=== Executing Critical Setup Commands ===' | tee -a $LOG_FILE
+update_progress 10 'Starting critical setup'
+"""
 
         # Add critical commands with progress tracking
-        total_commands = len(critical_commands) + len(optional_commands)
-        critical_progress_increment = 40 / max(len(critical_commands), 1)
+        critical_progress_increment = (
+            40 / max(len(critical_commands), 1) if critical_commands else 0
+        )
         current_progress = 10
 
         for i, cmd in enumerate(critical_commands):
-            script_parts.append(f"execute_critical '{cmd}'")
+            script_content += f"execute_critical '{cmd}'\n"
             current_progress += critical_progress_increment
-            script_parts.append(
-                f"update_progress {int(current_progress)} 'Critical setup {i+1}/{len(critical_commands)} completed'"
-            )
+            script_content += f"update_progress {int(current_progress)} 'Critical setup {i+1}/{len(critical_commands)} completed'\n"
 
         # Add optional commands section
-        script_parts.extend(
-            [
-                "",
-                "# Execute optional commands (failures are logged but don't stop initialization)",
-                "echo '=== Executing Optional Setup Commands ===' | tee -a $LOG_FILE",
-                "update_progress 50 'Starting optional setup'",
-                "FAILED_COMMANDS=()",
-            ]
-        )
+        script_content += f"""
+# Execute optional commands (failures are logged but don't stop initialization)
+echo '=== Executing Optional Setup Commands ===' | tee -a $LOG_FILE
+update_progress 50 'Starting optional setup'
+FAILED_COMMANDS=()
+"""
 
         # Add optional commands with progress tracking
-        optional_progress_increment = 40 / max(len(optional_commands), 1)
+        optional_progress_increment = (
+            40 / max(len(optional_commands), 1) if optional_commands else 0
+        )
         current_progress = 50
 
         for i, cmd in enumerate(optional_commands):
-            script_parts.extend(
-                [
-                    f"if ! execute_optional '{cmd}'; then",
-                    f"    FAILED_COMMANDS+=('{cmd}')",
-                    "fi",
-                ]
-            )
+            script_content += f"if ! execute_optional '{cmd}'; then\n"
+            script_content += f"    FAILED_COMMANDS+=('{cmd}')\n"
+            script_content += f"fi\n"
             current_progress += optional_progress_increment
-            script_parts.append(
-                f"update_progress {int(current_progress)} 'Optional setup {i+1}/{len(optional_commands)} completed'"
-            )
+            script_content += f"update_progress {int(current_progress)} 'Optional setup {i+1}/{len(optional_commands)} completed'\n"
 
         # Add completion section
-        script_parts.extend(
-            [
-                "",
-                "# Report initialization status",
-                "update_progress 95 'Finalizing initialization'",
-                "echo '=== DevPocket Environment Initialization Completed ===' | tee -a $LOG_FILE",
-                'echo "Timestamp: $(date)" | tee -a $LOG_FILE',
-                "",
-                "if [ ${#FAILED_COMMANDS[@]} -gt 0 ]; then",
-                '    echo "[WARNING] Some optional commands failed:" | tee -a $LOG_FILE',
-                '    for failed_cmd in "${FAILED_COMMANDS[@]}"; do',
-                '        echo "  - $failed_cmd" | tee -a $LOG_FILE',
-                "    done",
-                '    echo "[INFO] Container is running despite these failures. Check logs for details." | tee -a $LOG_FILE',
-                "    echo 'READY_WITH_WARNINGS' > $STATUS_FILE",
-                "else",
-                '    echo "[SUCCESS] All commands executed successfully!" | tee -a $LOG_FILE',
-                "    echo 'READY' > $STATUS_FILE",
-                "fi",
-                "",
-                "# Create detailed status information for health checks",
-                "cat > /tmp/devpocket-health << EOF",
-                "{",
-                '  "status": "$(cat $STATUS_FILE)",',
-                '  "timestamp": "$(date -Iseconds)",',
-                '  "initialization_completed": true,',
-                '  "failed_commands": [$(printf \'"%s",\' "${FAILED_COMMANDS[@]}" | sed \'s/,$//\')]',
-                "}",
-                "EOF",
-                "",
-                "update_progress 100 'Container ready'",
-                "",
-                "# Keep container running",
-                "echo '=== Container Ready - Entering Sleep Mode ===' | tee -a $LOG_FILE",
-                "tail -f $LOG_FILE &",  # Keep log visible
-                "sleep infinity",
-            ]
+        script_content += f"""
+# Report initialization status
+update_progress 95 'Finalizing initialization'
+echo '=== DevPocket Environment Initialization Completed ===' | tee -a $LOG_FILE
+echo "Timestamp: $(date)" | tee -a $LOG_FILE
+
+if [ ${{#FAILED_COMMANDS[@]}} -gt 0 ]; then
+    echo "[WARNING] Some optional commands failed:" | tee -a $LOG_FILE
+    for failed_cmd in "${{FAILED_COMMANDS[@]}}"; do
+        echo "  - $failed_cmd" | tee -a $LOG_FILE
+    done
+    echo "[INFO] Container is running despite these failures. Check logs for details." | tee -a $LOG_FILE
+    echo 'READY_WITH_WARNINGS' > $STATUS_FILE
+else
+    echo "[SUCCESS] All commands executed successfully!" | tee -a $LOG_FILE
+    echo 'READY' > $STATUS_FILE
+fi
+
+# Create health status file
+echo "READY" > /tmp/devpocket-status
+update_progress 100 'Container ready'
+
+# Keep container running
+echo '=== Container Ready - Entering Sleep Mode ===' | tee -a $LOG_FILE
+tail -f $LOG_FILE &
+sleep infinity
+"""
+
+        # Use base64 encoding to avoid all escaping issues
+        import base64
+
+        encoded_script = base64.b64encode(script_content.encode("utf-8")).decode(
+            "utf-8"
         )
 
-        # Join all parts and return as a single command
-        full_script = "\n".join(script_parts)
-        # Properly escape single quotes in the script content
-        escaped_script = full_script.replace("'", "'\\''")
-        return f"echo $'{escaped_script}' > /tmp/init.sh && chmod +x /tmp/init.sh && /tmp/init.sh"
+        return f"echo '{encoded_script}' | base64 -d > /tmp/init.sh && chmod +x /tmp/init.sh && /tmp/init.sh"
 
     async def recover_environment(self, environment_id: str) -> dict:
         """Recover a failed environment by restarting initialization with enhanced tracking"""
