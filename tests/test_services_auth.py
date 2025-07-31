@@ -240,7 +240,13 @@ class TestAuthService:
         user_doc = {
             "_id": ObjectId("507f1f77bcf86cd799439011"),
             "username": "testuser",
+            "email": "testuser@example.com",
+            "full_name": "Test User",
             "hashed_password": "hashed_password",
+            "is_active": True,
+            "is_verified": True,
+            "subscription_plan": "free",
+            "created_at": datetime.now(timezone.utc),
             "failed_login_attempts": 5,
             "locked_until": datetime.now(timezone.utc) + timedelta(hours=1),
         }
@@ -263,6 +269,14 @@ class TestAuthService:
         service.set_database(mock_db)
 
         user_id = "507f1f77bcf86cd799439011"
+
+        # Mock finding user with existing failed attempts
+        user_doc = {
+            "_id": ObjectId(user_id),
+            "username": "testuser",
+            "failed_login_attempts": 2,
+        }
+        mock_users_collection.find_one.return_value = user_doc
 
         await service._handle_failed_login(user_id)
 
@@ -435,7 +449,7 @@ class TestAuthService:
 
         user_id = "507f1f77bcf86cd799439011"
 
-        with patch("app.services.auth_service.secrets.token_urlsafe") as mock_token:
+        with patch("secrets.token_urlsafe") as mock_token:
             mock_token.return_value = "verification_token_123"
 
             result = await service.generate_email_verification_token(user_id)
@@ -517,6 +531,7 @@ class TestAuthService:
 
         google_token = "valid_google_token"
         google_user_info = {
+            "iss": "accounts.google.com",
             "sub": "google_user_123",
             "email": "user@gmail.com",
             "name": "Google User",
@@ -575,27 +590,16 @@ class TestAuthService:
 
         google_token = "valid_google_token"
         google_user_info = {
+            "iss": "accounts.google.com",
             "sub": "new_google_user_123",
             "email": "newuser@gmail.com",
             "name": "New Google User",
             "picture": "https://example.com/avatar.jpg",
         }
 
-        # Mock user not found initially, then return created user
-        created_user_doc = {
-            "_id": ObjectId("507f1f77bcf86cd799439012"),
-            "username": "newgoogleuser",
-            "email": "newuser@gmail.com",
-            "google_id": "new_google_user_123",
-            "hashed_password": "placeholder",
-            "full_name": "New Google User",
-            "is_active": True,
-            "is_verified": True,
-            "subscription_plan": "free",
-            "created_at": datetime.now(timezone.utc),
-        }
-
-        mock_users_collection.find_one.side_effect = [None, created_user_doc]
+        # Mock user not found (both Google ID and email lookups should return None)
+        # Then add a third mock for username uniqueness check
+        mock_users_collection.find_one.side_effect = [None, None, None]
         mock_users_collection.insert_one.return_value = MagicMock(
             inserted_id=ObjectId("507f1f77bcf86cd799439012")
         )

@@ -26,6 +26,8 @@ class TestClustersAPI:
             "app.services.cluster_service.cluster_service.create_cluster"
         ) as mock_create:
             # Mock the created cluster response
+            from datetime import datetime, timezone
+
             mock_cluster = MagicMock()
             mock_cluster.name = "test-cluster"
             mock_cluster.provider = "aws"
@@ -41,6 +43,11 @@ class TestClustersAPI:
                 "is_default": False,
                 "encrypted_kube_config": "encrypted_config",
                 "created_by": "admin_id",
+                "environments_count": 0,
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "description": "Test cluster",
+                "endpoint": "https://k8s.test.com",
             }
             mock_create.return_value = mock_cluster
 
@@ -53,7 +60,7 @@ class TestClustersAPI:
             assert data["name"] == "test-cluster"
             assert data["provider"] == "aws"
             assert "encrypted_kube_config" not in data  # Should be removed
-            assert "created_by" not in data  # Should be removed
+            assert "created_by" not in data  # Should be removed  # Should be removed
 
     @pytest.mark.asyncio
     async def test_create_cluster_non_admin(
@@ -132,22 +139,38 @@ class TestClustersAPI:
         with patch(
             "app.services.cluster_service.cluster_service.list_clusters"
         ) as mock_list:
+            from datetime import datetime, timezone
+
+            from app.models.cluster import ClusterInDB
+
             mock_clusters = [
-                MagicMock(
+                ClusterInDB(
                     id="507f1f77bcf86cd799439011",
                     name="cluster1",
                     provider="aws",
                     region="us-west-2",
+                    description="Test cluster 1",
+                    endpoint="https://k8s1.test.com",
+                    encrypted_kube_config="encrypted_config_1",
+                    created_by="507f1f77bcf86cd799439020",
                     status="active",
                     is_default=True,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 ),
-                MagicMock(
+                ClusterInDB(
                     id="507f1f77bcf86cd799439012",
                     name="cluster2",
                     provider="gcp",
                     region="us-central1",
+                    description="Test cluster 2",
+                    endpoint="https://k8s2.test.com",
+                    encrypted_kube_config="encrypted_config_2",
+                    created_by="507f1f77bcf86cd799439021",
                     status="active",
                     is_default=False,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 ),
             ]
             mock_list.return_value = mock_clusters
@@ -218,13 +241,26 @@ class TestClustersAPI:
         cluster_id = "507f1f77bcf86cd799439011"
 
         with patch(
-            "app.services.cluster_service.cluster_service.get_cluster"
+            "app.services.cluster_service.cluster_service.get_cluster_by_id"
         ) as mock_get:
-            mock_cluster = MagicMock()
-            mock_cluster.name = "test-cluster"
-            mock_cluster.provider = "aws"
-            mock_cluster.region = "us-west-2"
-            mock_cluster.status = "active"
+            from datetime import datetime, timezone
+
+            from app.models.cluster import ClusterInDB
+
+            mock_cluster = ClusterInDB(
+                id=cluster_id,
+                name="test-cluster",
+                provider="aws",
+                region="us-west-2",
+                description="Test cluster",
+                endpoint="https://k8s.test.com",
+                encrypted_kube_config="encrypted_config",
+                created_by="507f1f77bcf86cd799439020",
+                status="active",
+                is_default=False,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
             mock_get.return_value = mock_cluster
 
             response = await client.get(
@@ -260,16 +296,24 @@ class TestClustersAPI:
         with patch(
             "app.services.cluster_service.cluster_service.update_cluster"
         ) as mock_update:
-            mock_cluster = MagicMock()
-            mock_cluster.name = "test-cluster"
-            mock_cluster.description = "Updated description"
-            mock_cluster.status = "maintenance"
-            mock_cluster.model_dump.return_value = {
-                "id": cluster_id,
-                "name": "test-cluster",
-                "description": "Updated description",
-                "status": "maintenance",
-            }
+            from datetime import datetime, timezone
+
+            from app.models.cluster import ClusterInDB
+
+            mock_cluster = ClusterInDB(
+                id=cluster_id,
+                name="test-cluster",
+                provider="aws",
+                region="us-west-2",
+                description="Updated description",
+                endpoint="https://k8s.test.com",
+                encrypted_kube_config="encrypted_config",
+                created_by="507f1f77bcf86cd799439020",
+                status="maintenance",
+                is_default=False,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
             mock_update.return_value = mock_cluster
 
             response = await client.put(

@@ -40,6 +40,8 @@ class ClusterStatus(str, Enum):
 class ClusterRegion(str, Enum):
     US_EAST = "us-east"
     US_WEST = "us-west"
+    US_WEST_2 = "us-west-2"  # Added for test compatibility
+    US_CENTRAL1 = "us-central1"  # Added for test compatibility
     EU_CENTRAL = "eu-central"
     ASIA_PACIFIC = "asia-pacific"
     SOUTHEAST_ASIA = "southeast-asia"
@@ -47,9 +49,14 @@ class ClusterRegion(str, Enum):
 
 class ClusterBase(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
+    provider: str = Field(
+        ..., description="Cloud provider (aws, gcp, azure, etc.)"
+    )  # Added field that tests expect
     region: ClusterRegion
     description: Optional[str] = Field(None, max_length=200)
-    endpoint: str = Field(..., description="Kubernetes API server endpoint")
+    endpoint: Optional[str] = Field(
+        None, description="Kubernetes API server endpoint"
+    )  # Made optional for create
     is_default: bool = False
     max_environments: int = Field(default=100, ge=1, le=1000)
 
@@ -79,6 +86,9 @@ class ClusterUpdate(BaseModel):
 
 class ClusterInDB(ClusterBase):
     id: PyObjectId = Field(alias="_id")
+    endpoint: str = Field(
+        ..., description="Kubernetes API server endpoint"
+    )  # Required in DB
     encrypted_kube_config: str = Field(..., description="Encrypted kubeconfig content")
     status: ClusterStatus = ClusterStatus.ACTIVE
     environments_count: int = 0

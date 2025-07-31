@@ -320,15 +320,15 @@ class AuthService:
         try:
             from datetime import datetime, timezone
 
-            # Find user with this token
-            user = await self.db.users.find_one(
-                {
-                    "email_verification_token": token,
-                    "email_verification_expires": {"$gt": datetime.now(timezone.utc)},
-                }
-            )
+            # Find user with this token (regardless of expiry)
+            user = await self.db.users.find_one({"email_verification_token": token})
 
             if not user:
+                return False
+
+            # Check if token is expired
+            expires = user.get("email_verification_expires")
+            if expires and expires < datetime.now(timezone.utc):
                 return False
 
             # Mark user as verified and clear verification token
@@ -380,7 +380,7 @@ class AuthService:
                     verified_email=idinfo.get("email_verified", False),
                 )
 
-            except ValueError as e:
+            except (ValueError, Exception) as e:
                 logger.warning(f"Invalid Google token: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

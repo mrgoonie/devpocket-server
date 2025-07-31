@@ -16,6 +16,7 @@ from app.models.error_responses import (
 from app.models.user import (
     EmailVerificationRequest,
     RefreshTokenRequest,
+    ResendVerificationRequest,
     Token,
     UserCreate,
     UserLogin,
@@ -414,40 +415,49 @@ async def verify_email(
                 }
             },
         },
-        **get_auth_error_responses(),
-        **get_error_responses(400, 422, 500),
+        **get_error_responses(400, 404, 422, 500),
     },
 )
 async def resend_verification_email(
-    current_user=Depends(get_current_user), db=Depends(get_database)
+    request: ResendVerificationRequest, db=Depends(get_database)
 ):
     """Resend email verification token"""
     try:
-        if current_user.is_verified:
+        # Find user by email
+        user_doc = await db.users.find_one({"email": request.email})
+
+        if not user_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User with this email not found",
+            )
+
+        # Check if already verified
+        if user_doc.get("is_verified", False):
             return {"message": "Email already verified"}
 
         auth_service.set_database(db)
 
         # Generate new verification token
         token = await auth_service.generate_email_verification_token(
-            str(current_user.id)
+            str(user_doc["_id"])
         )
 
         # Send verification email
         email_sent = await email_service.send_verification_email(
-            to_email=current_user.email,
-            username=current_user.username,
+            to_email=request.email,
+            username=user_doc["username"],
             verification_token=token,
         )
 
         # Audit log
         audit_log(
             action="verification_email_resent",
-            user_id=str(current_user.id),
-            details={"email": current_user.email},
+            user_id=str(user_doc["_id"]),
+            details={"email": request.email},
         )
 
-        logger.info(f"Verification email resent for user: {current_user.username}")
+        logger.info(f"Verification email resent for user: {user_doc['username']}")
 
         if email_sent:
             return {"message": "Verification email sent successfully"}

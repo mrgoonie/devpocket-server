@@ -99,8 +99,8 @@ class UserResponse(UserBase):
 
 
 class UserLogin(BaseModel):
-    username_or_email: str
-    password: str
+    username_or_email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
 
 
 class Token(BaseModel):
@@ -115,7 +115,12 @@ class RefreshTokenRequest(BaseModel):
 
 
 class EmailVerificationRequest(BaseModel):
-    token: str
+    email: EmailStr
+    token: str = Field(..., min_length=1)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 
 class TokenData(BaseModel):

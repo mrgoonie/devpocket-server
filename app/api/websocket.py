@@ -64,6 +64,18 @@ class WebSocketConnectionManager:
             for connection_id in self.user_connections[user_id]:
                 await self.send_personal_message(message, connection_id)
 
+    async def broadcast_to_user(self, message: str, user_id: str):
+        """Broadcast message to all connections of a specific user"""
+        if user_id in self.user_connections:
+            for connection_id in self.user_connections[user_id]:
+                await self.send_personal_message(message, connection_id)
+
+    def get_user_connection_count(self, user_id: str) -> int:
+        """Get number of active connections for a user"""
+        if user_id in self.user_connections:
+            return len(self.user_connections[user_id])
+        return 0
+
 
 # Global connection manager
 connection_manager = WebSocketConnectionManager()
