@@ -941,22 +941,48 @@ class EnvironmentService:
                     else:
                         raise Exception(f"Failed to create PVCs: {e}")
 
-                # Step 2.5: Wait for PVCs to be ready
+                # Step 2.5: Check if PVCs need to wait for first consumer
                 logger.info(
-                    f"Waiting for PVCs to be ready for environment {environment.pod_name}"
+                    f"Checking PVC binding mode for environment {environment.pod_name}"
                 )
-                # Wait for both PVCs in parallel for better performance
-                await asyncio.gather(
-                    self._wait_for_pvc_ready(
-                        v1_core, environment.namespace, f"home-{environment.pod_name}"
-                    ),
-                    self._wait_for_pvc_ready(
-                        v1_core, environment.namespace, f"system-{environment.pod_name}"
-                    ),
-                )
-                logger.info(
-                    f"All PVCs are ready for environment {environment.pod_name}"
-                )
+
+                # Check if storage class uses WaitForFirstConsumer
+                volume_binding_mode = "Immediate"  # Default assumption
+                try:
+                    storage_v1 = client.StorageV1Api(v1_core.api_client)
+                    storage_class = storage_v1.read_storage_class(
+                        name="microk8s-hostpath"
+                    )
+                    volume_binding_mode = storage_class.volume_binding_mode
+
+                    if volume_binding_mode == "WaitForFirstConsumer":
+                        logger.info(
+                            f"Storage class uses WaitForFirstConsumer - skipping PVC wait for environment {environment.pod_name}"
+                        )
+                    else:
+                        # Wait for both PVCs in parallel for better performance
+                        logger.info(
+                            f"Waiting for PVCs to be ready for environment {environment.pod_name}"
+                        )
+                        await asyncio.gather(
+                            self._wait_for_pvc_ready(
+                                v1_core,
+                                environment.namespace,
+                                f"home-{environment.pod_name}",
+                            ),
+                            self._wait_for_pvc_ready(
+                                v1_core,
+                                environment.namespace,
+                                f"system-{environment.pod_name}",
+                            ),
+                        )
+                        logger.info(
+                            f"All PVCs are ready for environment {environment.pod_name}"
+                        )
+                except Exception as storage_check_error:
+                    logger.warning(
+                        f"Could not check storage class binding mode: {storage_check_error}. Proceeding with deployment creation."
+                    )
 
                 # Step 3: Create deployment
                 logger.info(
@@ -1165,6 +1191,39 @@ class EnvironmentService:
                 logger.info(
                     f"Environment {environment.pod_name} status set to INSTALLING"
                 )
+
+                # For WaitForFirstConsumer storage classes, verify PVCs bind after deployment creation
+                if volume_binding_mode == "WaitForFirstConsumer":
+                    logger.info(
+                        f"Verifying PVC binding after deployment creation for {environment.pod_name}"
+                    )
+                    try:
+                        # Give the deployment a moment to start and trigger PVC binding
+                        await asyncio.sleep(10)
+
+                        # Check PVC status with a shorter timeout since deployment should trigger binding
+                        await asyncio.gather(
+                            self._wait_for_pvc_ready(
+                                v1_core,
+                                environment.namespace,
+                                f"home-{environment.pod_name}",
+                                timeout=60,
+                            ),
+                            self._wait_for_pvc_ready(
+                                v1_core,
+                                environment.namespace,
+                                f"system-{environment.pod_name}",
+                                timeout=60,
+                            ),
+                        )
+                        logger.info(
+                            f"PVCs successfully bound after deployment creation for {environment.pod_name}"
+                        )
+                    except Exception as pvc_binding_error:
+                        logger.warning(
+                            f"PVC binding verification failed for {environment.pod_name}: {pvc_binding_error}. "
+                            "This may resolve as the pod starts up."
+                        )
 
                 # Start async task to stream logs and monitor installation
                 asyncio.create_task(
