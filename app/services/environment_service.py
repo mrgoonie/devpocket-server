@@ -1086,7 +1086,7 @@ class EnvironmentService:
                                         working_dir="/home/devpocket/workspace",
                                         # Health checks to ensure container stays running
                                         liveness_probe=client.V1Probe(
-                                            exec=client.V1ExecAction(
+                                            _exec=client.V1ExecAction(
                                                 command=[
                                                     "test",
                                                     "-f",
@@ -1099,7 +1099,7 @@ class EnvironmentService:
                                             failure_threshold=3,
                                         ),
                                         readiness_probe=client.V1Probe(
-                                            exec=client.V1ExecAction(
+                                            _exec=client.V1ExecAction(
                                                 command=[
                                                     "grep",
                                                     "-q",
@@ -1420,8 +1420,29 @@ class EnvironmentService:
                 # Define valid status transitions
                 valid_transitions = {
                     EnvironmentStatus.CREATING: [
+                        EnvironmentStatus.PROVISIONING,
                         EnvironmentStatus.RUNNING,
                         EnvironmentStatus.ERROR,
+                        EnvironmentStatus.FAILED,
+                    ],
+                    EnvironmentStatus.PROVISIONING: [
+                        EnvironmentStatus.INSTALLING,
+                        EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.STOPPED,
+                        EnvironmentStatus.ERROR,
+                        EnvironmentStatus.FAILED,
+                        EnvironmentStatus.TERMINATED,
+                    ],
+                    EnvironmentStatus.INSTALLING: [
+                        EnvironmentStatus.CONFIGURING,
+                        EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.ERROR,
+                        EnvironmentStatus.FAILED,
+                    ],
+                    EnvironmentStatus.CONFIGURING: [
+                        EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.ERROR,
+                        EnvironmentStatus.FAILED,
                     ],
                     EnvironmentStatus.RUNNING: [
                         EnvironmentStatus.STOPPED,
@@ -1434,6 +1455,9 @@ class EnvironmentService:
                     ],
                     EnvironmentStatus.ERROR: [
                         EnvironmentStatus.RUNNING,
+                        EnvironmentStatus.TERMINATED,
+                    ],
+                    EnvironmentStatus.FAILED: [
                         EnvironmentStatus.TERMINATED,
                     ],
                     EnvironmentStatus.TERMINATED: [],  # Terminal state
@@ -1495,7 +1519,15 @@ class EnvironmentService:
                     detail="Environment not found",
                 )
 
-            # Update status to terminating
+            # Cancel any running creation task to prevent race conditions
+            if (
+                hasattr(environment, "creation_task_id")
+                and environment.creation_task_id
+            ):
+                self.task_manager.cancel_task(environment.creation_task_id)
+                logger.info(f"Cancelled creation task: {environment.creation_task_id}")
+
+            # Update status to terminated
             from bson import ObjectId
 
             await self.db.environments.update_one(
@@ -2242,14 +2274,11 @@ class AsyncEnvironmentTaskManager:
             # Create namespace
             await self._create_namespace_with_timeout(v1_core, environment, timeout=30)
 
-            # Create PVCs in parallel
-            await self._create_pvcs_with_timeout(v1_core, environment, timeout=120)
-
-            # Wait for PVCs to be ready
-            await self._wait_for_pvcs_ready(v1_core, environment, timeout=300)
-
-            # Create deployment
-            await self._create_deployment_with_timeout(v1_apps, environment, timeout=60)
+            # Create PVCs and deployment simultaneously - let Kubernetes handle scheduling
+            await asyncio.gather(
+                self._create_pvcs_with_timeout(v1_core, environment, timeout=120),
+                self._create_deployment_with_timeout(v1_apps, environment, timeout=60),
+            )
 
             # Create service
             await self._create_service_with_timeout(v1_core, environment, timeout=30)
@@ -2506,7 +2535,7 @@ class AsyncEnvironmentTaskManager:
                                 ],
                                 working_dir="/home/devpocket/workspace",
                                 liveness_probe=client.V1Probe(
-                                    exec=client.V1ExecAction(
+                                    _exec=client.V1ExecAction(
                                         command=["test", "-f", "/tmp/devpocket-status"]
                                     ),
                                     initial_delay_seconds=60,
@@ -2515,7 +2544,7 @@ class AsyncEnvironmentTaskManager:
                                     failure_threshold=3,
                                 ),
                                 readiness_probe=client.V1Probe(
-                                    exec=client.V1ExecAction(
+                                    _exec=client.V1ExecAction(
                                         command=[
                                             "grep",
                                             "-q",
