@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.1.0-dev.22 (2025-07-31)
+
+### Bug Fixes
+
+- Replace bare except clauses with specific Exception handling
+  ([`8672011`](https://github.com/mrgoonie/devpocket-server/commit/86720111333a025310fb8392caf8d39046089ae5))
+
+
 ## v0.1.0-dev.21 (2025-07-30)
 
 ### Bug Fixes
