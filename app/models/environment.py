@@ -32,12 +32,17 @@ class PyObjectId(ObjectId):
 
 
 class EnvironmentStatus(str, Enum):
-    CREATING = "creating"
-    INSTALLING = "installing"
-    RUNNING = "running"
-    STOPPED = "stopped"
-    TERMINATED = "terminated"
-    ERROR = "error"
+    """Environment lifecycle status states"""
+
+    CREATING = "creating"  # Initial status, DB record created
+    PROVISIONING = "provisioning"  # Kubernetes resources being created
+    INSTALLING = "installing"  # Container starting, packages installing
+    CONFIGURING = "configuring"  # Final setup, SSH keys, user config
+    RUNNING = "running"  # Ready for use
+    STOPPED = "stopped"  # Environment stopped
+    TERMINATED = "terminated"  # Environment terminated
+    ERROR = "error"  # Recoverable error state
+    FAILED = "failed"  # Permanent failure state
 
 
 class EnvironmentTemplate(str, Enum):
@@ -132,6 +137,13 @@ class EnvironmentInDB(BaseModel):
 
     # Installation tracking
     installation_completed: bool = False
+
+    # Progress tracking for async creation
+    creation_progress: Optional[str] = None  # Current step description
+    creation_task_id: Optional[str] = None  # Background task ID
+    error_message: Optional[str] = None  # Detailed error information
+    retry_count: int = 0  # Number of retry attempts
+    cluster_id: Optional[PyObjectId] = None  # Associated cluster
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

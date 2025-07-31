@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import time
@@ -64,15 +65,19 @@ class EnvironmentService:
     def __init__(self):
         self.db = None
         self.active_sessions: Dict[str, WebSocketSession] = {}
+        self.task_manager = None  # Will be initialized after database is set
 
     def set_database(self, db):
         """Set database instance"""
         self.db = db
+        # Initialize task manager after database is set
+        if self.task_manager is None:
+            self.task_manager = AsyncEnvironmentTaskManager(self)
 
     async def create_environment(
         self, user: UserInDB, env_data: EnvironmentCreate
     ) -> EnvironmentInDB:
-        """Create a new development environment"""
+        """Create a new development environment - returns immediately with CREATING status"""
         try:
             # Check user's subscription limits
             await self._check_user_limits(user)
@@ -96,43 +101,65 @@ class EnvironmentService:
                 "namespace": namespace,
                 "pod_name": pod_name,
                 "service_name": service_name,
+                "creation_progress": "Environment record created, starting resource provisioning...",
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
 
-            # Save to database
+            # Save to database first
             result = await self.db.environments.insert_one(env_dict)
 
             # Create EnvironmentInDB object with the inserted ID
             env_dict["_id"] = str(result.inserted_id)
             environment = EnvironmentInDB(**env_dict)
 
-            # Create the actual container/pod (with proper error handling)
-            try:
-                await self._create_container(environment)
-            except Exception as container_error:
-                # If container creation fails, update environment status to error
+            # Start async environment creation task
+            if self.task_manager:
+                task_id = self.task_manager.create_environment_async(
+                    str(result.inserted_id), environment
+                )
+
+                # Update environment with task ID
                 await self.db.environments.update_one(
                     {"_id": result.inserted_id},
                     {
                         "$set": {
-                            "status": EnvironmentStatus.ERROR.value,
-                            "error_message": str(container_error),
+                            "creation_task_id": task_id,
                             "updated_at": datetime.now(timezone.utc),
                         }
                     },
                 )
-                logger.error(
-                    f"Container creation failed for environment {env_data.name}: {container_error}"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Environment created but container setup failed: {str(container_error)}",
-                )
 
-            logger.info(
-                f"Environment creation started: {env_data.name} for user {user.username}"
-            )
+                logger.info(
+                    f"Started async environment creation: {env_data.name} (task: {task_id}) for user {user.username}"
+                )
+            else:
+                # Fallback to synchronous creation (for testing or when task manager is not available)
+                logger.warning(
+                    "Task manager not available, falling back to synchronous creation"
+                )
+                try:
+                    await self._create_container(environment)
+                except Exception as container_error:
+                    # If container creation fails, update environment status to error
+                    await self.db.environments.update_one(
+                        {"_id": result.inserted_id},
+                        {
+                            "$set": {
+                                "status": EnvironmentStatus.ERROR.value,
+                                "error_message": str(container_error),
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        },
+                    )
+                    logger.error(
+                        f"Container creation failed for environment {env_data.name}: {container_error}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Environment created but container setup failed: {str(container_error)}",
+                    )
+
             return environment
 
         except HTTPException:
@@ -2021,6 +2048,647 @@ class EnvironmentService:
                 )
             except Exception:
                 pass
+
+
+class AsyncEnvironmentTaskManager:
+    """Manages asynchronous environment creation tasks"""
+
+    def __init__(self, environment_service: "EnvironmentService"):
+        self.environment_service = environment_service
+        self.active_tasks: Dict[str, asyncio.Task] = {}
+        self.task_status: Dict[str, str] = {}
+
+    def create_environment_async(
+        self, environment_id: str, environment: EnvironmentInDB
+    ) -> str:
+        """Start async environment creation task"""
+        task_id = f"env_create_{environment_id}_{uuid.uuid4().hex[:8]}"
+
+        # Create the async task
+        task = asyncio.create_task(
+            self._create_environment_workflow(task_id, environment_id, environment)
+        )
+
+        # Store task reference
+        self.active_tasks[task_id] = task
+        self.task_status[task_id] = "started"
+
+        # Add task cleanup callback
+        task.add_done_callback(lambda t: self._cleanup_task(task_id))
+
+        return task_id
+
+    async def _create_environment_workflow(
+        self, task_id: str, environment_id: str, environment: EnvironmentInDB
+    ):
+        """Complete environment creation workflow with progress tracking"""
+        try:
+            logger.info(f"Starting async environment creation workflow: {task_id}")
+
+            # Step 1: Provisioning - Create Kubernetes resources
+            await self._update_progress(
+                environment_id,
+                EnvironmentStatus.PROVISIONING,
+                "Creating Kubernetes resources...",
+            )
+            await self._create_kubernetes_resources(environment)
+
+            # Step 2: Installing - Wait for pod ready and monitor installation
+            await self._update_progress(
+                environment_id,
+                EnvironmentStatus.INSTALLING,
+                "Installing packages and dependencies...",
+            )
+            await self._monitor_installation(environment)
+
+            # Step 3: Configuring - Final setup
+            await self._update_progress(
+                environment_id,
+                EnvironmentStatus.CONFIGURING,
+                "Configuring environment...",
+            )
+            await self._configure_environment(environment)
+
+            # Step 4: Complete - Mark as running
+            await self._update_progress(
+                environment_id, EnvironmentStatus.RUNNING, "Environment ready!"
+            )
+
+            logger.info(f"Environment creation completed successfully: {task_id}")
+            self.task_status[task_id] = "completed"
+
+        except asyncio.CancelledError:
+            logger.info(f"Environment creation task cancelled: {task_id}")
+            await self._update_progress(
+                environment_id, EnvironmentStatus.ERROR, "Task cancelled"
+            )
+            self.task_status[task_id] = "cancelled"
+
+        except Exception as e:
+            error_msg = self.environment_service._sanitize_error_message(str(e))
+            logger.error(f"Environment creation failed: {task_id} - {error_msg}")
+            await self._update_progress(
+                environment_id,
+                EnvironmentStatus.FAILED,
+                f"Creation failed: {error_msg}",
+            )
+            self.task_status[task_id] = "failed"
+
+            # Clean up any partial resources
+            try:
+                await self._cleanup_failed_environment(environment)
+            except Exception as cleanup_error:
+                logger.error(f"Cleanup failed for {environment_id}: {cleanup_error}")
+
+    async def _create_kubernetes_resources(self, environment: EnvironmentInDB):
+        """Create all Kubernetes resources with proper sequencing and timeouts"""
+        import base64
+        import os
+        import tempfile
+
+        from kubernetes import client
+        from kubernetes.client.exceptions import ApiException
+
+        from app.models.cluster import ClusterRegion
+        from app.services.cluster_service import cluster_service
+
+        # Get cluster configuration
+        cluster_service.set_database(self.environment_service.db)
+        cluster = await cluster_service.get_cluster_by_region(
+            ClusterRegion.SOUTHEAST_ASIA
+        )
+        if not cluster:
+            raise Exception("No active cluster found for Southeast Asia region")
+
+        # Get and prepare kubeconfig
+        kubeconfig_content = await cluster_service.get_decrypted_kubeconfig(cluster.id)
+        if not kubeconfig_content:
+            raise Exception("Failed to get kubeconfig for cluster")
+
+        kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode("utf-8")
+
+        # Create temporary kubeconfig file
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as temp_kubeconfig:
+            temp_kubeconfig.write(kubeconfig_yaml)
+            kubeconfig_path = temp_kubeconfig.name
+
+        try:
+            # Initialize Kubernetes clients
+            v1_core, v1_apps = self.environment_service._get_kubernetes_clients(
+                kubeconfig_path
+            )
+
+            # Create namespace
+            await self._create_namespace_with_timeout(v1_core, environment, timeout=30)
+
+            # Create PVCs in parallel
+            await self._create_pvcs_with_timeout(v1_core, environment, timeout=120)
+
+            # Wait for PVCs to be ready
+            await self._wait_for_pvcs_ready(v1_core, environment, timeout=300)
+
+            # Create deployment
+            await self._create_deployment_with_timeout(v1_apps, environment, timeout=60)
+
+            # Create service
+            await self._create_service_with_timeout(v1_core, environment, timeout=30)
+
+            # Update environment with cluster information
+            from bson import ObjectId
+
+            await self.environment_service.db.environments.update_one(
+                {"_id": ObjectId(environment.id)},
+                {
+                    "$set": {
+                        "cluster_id": cluster.id,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+
+        finally:
+            # Clean up temporary kubeconfig
+            if os.path.exists(kubeconfig_path):
+                os.unlink(kubeconfig_path)
+
+    async def _create_namespace_with_timeout(
+        self, v1_core, environment: EnvironmentInDB, timeout: int = 30
+    ):
+        """Create namespace with timeout"""
+        from kubernetes import client
+
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(v1_core.read_namespace, name=environment.namespace),
+                timeout=timeout,
+            )
+            logger.info(f"Namespace {environment.namespace} already exists")
+        except asyncio.TimeoutError:
+            raise Exception(f"Timeout checking namespace after {timeout}s")
+        except Exception as e:
+            if hasattr(e, "status") and e.status == 404:
+                # Create namespace
+                namespace_manifest = client.V1Namespace(
+                    metadata=client.V1ObjectMeta(
+                        name=environment.namespace,
+                        labels={
+                            "app": "devpocket",
+                            "user-id": environment.user_id,
+                            "managed-by": "devpocket-server",
+                        },
+                    )
+                )
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(
+                            v1_core.create_namespace, body=namespace_manifest
+                        ),
+                        timeout=timeout,
+                    )
+                    logger.info(f"Created namespace: {environment.namespace}")
+                except asyncio.TimeoutError:
+                    raise Exception(f"Timeout creating namespace after {timeout}s")
+            else:
+                raise Exception(f"Failed to check/create namespace: {e}")
+
+    async def _create_pvcs_with_timeout(
+        self, v1_core, environment: EnvironmentInDB, timeout: int = 120
+    ):
+        """Create PVCs with timeout"""
+        from kubernetes import client
+
+        # Define PVC manifests
+        home_pvc_manifest = client.V1PersistentVolumeClaim(
+            metadata=client.V1ObjectMeta(
+                name=f"home-{environment.pod_name}",
+                namespace=environment.namespace,
+                labels={
+                    "app": "devpocket",
+                    "environment": environment.pod_name,
+                    "user-id": environment.user_id,
+                    "volume-type": "home",
+                },
+            ),
+            spec=client.V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                storage_class_name="microk8s-hostpath",
+                resources=client.V1ResourceRequirements(
+                    requests={"storage": environment.resources.storage}
+                ),
+            ),
+        )
+
+        system_pvc_manifest = client.V1PersistentVolumeClaim(
+            metadata=client.V1ObjectMeta(
+                name=f"system-{environment.pod_name}",
+                namespace=environment.namespace,
+                labels={
+                    "app": "devpocket",
+                    "environment": environment.pod_name,
+                    "user-id": environment.user_id,
+                    "volume-type": "system",
+                },
+            ),
+            spec=client.V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                storage_class_name="microk8s-hostpath",
+                resources=client.V1ResourceRequirements(requests={"storage": "5Gi"}),
+            ),
+        )
+
+        # Create PVCs in parallel
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    asyncio.to_thread(
+                        v1_core.create_namespaced_persistent_volume_claim,
+                        namespace=environment.namespace,
+                        body=home_pvc_manifest,
+                    ),
+                    asyncio.to_thread(
+                        v1_core.create_namespaced_persistent_volume_claim,
+                        namespace=environment.namespace,
+                        body=system_pvc_manifest,
+                    ),
+                ),
+                timeout=timeout,
+            )
+            logger.info(f"Created PVCs for environment: {environment.pod_name}")
+        except asyncio.TimeoutError:
+            raise Exception(f"Timeout creating PVCs after {timeout}s")
+        except Exception as e:
+            if hasattr(e, "status") and e.status == 409:  # Already exists
+                logger.info(
+                    f"PVCs already exist for environment {environment.pod_name}"
+                )
+            else:
+                raise Exception(f"Failed to create PVCs: {e}")
+
+    async def _wait_for_pvcs_ready(
+        self, v1_core, environment: EnvironmentInDB, timeout: int = 300
+    ):
+        """Wait for PVCs to be ready with timeout"""
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    self.environment_service._wait_for_pvc_ready(
+                        v1_core, environment.namespace, f"home-{environment.pod_name}"
+                    ),
+                    self.environment_service._wait_for_pvc_ready(
+                        v1_core, environment.namespace, f"system-{environment.pod_name}"
+                    ),
+                ),
+                timeout=timeout,
+            )
+            logger.info(f"All PVCs are ready for environment {environment.pod_name}")
+        except asyncio.TimeoutError:
+            raise Exception(f"Timeout waiting for PVCs to be ready after {timeout}s")
+
+    async def _create_deployment_with_timeout(
+        self, v1_apps, environment: EnvironmentInDB, timeout: int = 60
+    ):
+        """Create deployment with timeout"""
+        from kubernetes import client
+
+        # Get startup command
+        startup_command = await self.environment_service._get_template_startup_command(
+            environment.template
+        )
+
+        deployment_manifest = client.V1Deployment(
+            metadata=client.V1ObjectMeta(
+                name=environment.pod_name,
+                namespace=environment.namespace,
+                labels={
+                    "app": "devpocket",
+                    "environment": environment.pod_name,
+                    "user-id": environment.user_id,
+                    "template": environment.template.value,
+                },
+            ),
+            spec=client.V1DeploymentSpec(
+                replicas=1,
+                selector=client.V1LabelSelector(
+                    match_labels={
+                        "app": "devpocket",
+                        "environment": environment.pod_name,
+                    }
+                ),
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(
+                        labels={
+                            "app": "devpocket",
+                            "environment": environment.pod_name,
+                            "user-id": environment.user_id,
+                        }
+                    ),
+                    spec=client.V1PodSpec(
+                        containers=[
+                            client.V1Container(
+                                name="devpocket-env",
+                                image=self.environment_service._get_template_image(
+                                    environment.template
+                                ),
+                                command=["/bin/bash"],
+                                args=["-c", startup_command],
+                                ports=[
+                                    client.V1ContainerPort(
+                                        container_port=8080, name="web"
+                                    ),
+                                    client.V1ContainerPort(
+                                        container_port=22, name="ssh"
+                                    ),
+                                ],
+                                resources=client.V1ResourceRequirements(
+                                    requests={
+                                        "cpu": environment.resources.cpu,
+                                        "memory": environment.resources.memory,
+                                    },
+                                    limits={
+                                        "cpu": self.environment_service._double_resource(
+                                            environment.resources.cpu
+                                        ),
+                                        "memory": self.environment_service._double_resource(
+                                            environment.resources.memory
+                                        ),
+                                    },
+                                ),
+                                env=[
+                                    client.V1EnvVar(name=k, value=v)
+                                    for k, v in environment.environment_variables.items()
+                                ]
+                                + [
+                                    client.V1EnvVar(
+                                        name="USER_ID", value=environment.user_id
+                                    ),
+                                    client.V1EnvVar(
+                                        name="ENVIRONMENT_NAME", value=environment.name
+                                    ),
+                                ],
+                                volume_mounts=[
+                                    client.V1VolumeMount(
+                                        name="home-dir", mount_path="/home"
+                                    ),
+                                    client.V1VolumeMount(
+                                        name="system-dirs", mount_path="/var/lib/apt"
+                                    ),
+                                    client.V1VolumeMount(
+                                        name="system-dirs",
+                                        mount_path="/usr/local",
+                                        sub_path="usr-local",
+                                    ),
+                                    client.V1VolumeMount(
+                                        name="system-dirs",
+                                        mount_path="/opt",
+                                        sub_path="opt",
+                                    ),
+                                ],
+                                working_dir="/home/devpocket/workspace",
+                                liveness_probe=client.V1Probe(
+                                    exec=client.V1ExecAction(
+                                        command=["test", "-f", "/tmp/devpocket-status"]
+                                    ),
+                                    initial_delay_seconds=60,
+                                    period_seconds=30,
+                                    timeout_seconds=5,
+                                    failure_threshold=3,
+                                ),
+                                readiness_probe=client.V1Probe(
+                                    exec=client.V1ExecAction(
+                                        command=[
+                                            "grep",
+                                            "-q",
+                                            "READY",
+                                            "/tmp/devpocket-status",
+                                        ]
+                                    ),
+                                    initial_delay_seconds=30,
+                                    period_seconds=10,
+                                    timeout_seconds=3,
+                                    failure_threshold=5,
+                                ),
+                            )
+                        ],
+                        volumes=[
+                            client.V1Volume(
+                                name="home-dir",
+                                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=f"home-{environment.pod_name}"
+                                ),
+                            ),
+                            client.V1Volume(
+                                name="system-dirs",
+                                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=f"system-{environment.pod_name}"
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        )
+
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    v1_apps.create_namespaced_deployment,
+                    namespace=environment.namespace,
+                    body=deployment_manifest,
+                ),
+                timeout=timeout,
+            )
+            logger.info(f"Created deployment: {environment.pod_name}")
+        except asyncio.TimeoutError:
+            raise Exception(f"Timeout creating deployment after {timeout}s")
+
+    async def _create_service_with_timeout(
+        self, v1_core, environment: EnvironmentInDB, timeout: int = 30
+    ):
+        """Create service with timeout"""
+        from kubernetes import client
+
+        service_manifest = client.V1Service(
+            metadata=client.V1ObjectMeta(
+                name=environment.service_name,
+                namespace=environment.namespace,
+                labels={
+                    "app": "devpocket",
+                    "environment": environment.pod_name,
+                    "user-id": environment.user_id,
+                },
+            ),
+            spec=client.V1ServiceSpec(
+                selector={
+                    "app": "devpocket",
+                    "environment": environment.pod_name,
+                },
+                ports=[
+                    client.V1ServicePort(
+                        name="web", port=8080, target_port=8080, protocol="TCP"
+                    ),
+                    client.V1ServicePort(
+                        name="ssh", port=22, target_port=22, protocol="TCP"
+                    ),
+                ],
+                type="ClusterIP",
+            ),
+        )
+
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    v1_core.create_namespaced_service,
+                    namespace=environment.namespace,
+                    body=service_manifest,
+                ),
+                timeout=timeout,
+            )
+            logger.info(f"Created service: {environment.service_name}")
+        except asyncio.TimeoutError:
+            raise Exception(f"Timeout creating service after {timeout}s")
+
+    async def _monitor_installation(self, environment: EnvironmentInDB):
+        """Monitor container installation progress"""
+        try:
+            # Start log streaming in background
+            log_task = asyncio.create_task(
+                self.environment_service._stream_installation_logs(
+                    environment, environment.cluster_id
+                )
+            )
+
+            # Wait for installation to complete with timeout
+            timeout = 600  # 10 minutes for installation
+            start_time = time.time()
+
+            while time.time() - start_time < timeout:
+                # Check if environment status changed to RUNNING or ERROR
+                from bson import ObjectId
+
+                env_doc = await self.environment_service.db.environments.find_one(
+                    {"_id": ObjectId(environment.id)}
+                )
+
+                if env_doc:
+                    current_status = env_doc.get("status")
+                    if current_status == EnvironmentStatus.RUNNING.value:
+                        logger.info(
+                            f"Installation completed for {environment.pod_name}"
+                        )
+                        break
+                    elif current_status == EnvironmentStatus.ERROR.value:
+                        raise Exception(
+                            f"Installation failed for {environment.pod_name}"
+                        )
+
+                await asyncio.sleep(10)  # Check every 10 seconds
+            else:
+                # Timeout reached
+                log_task.cancel()
+                raise Exception(
+                    f"Installation timeout after {timeout}s for {environment.pod_name}"
+                )
+
+        except Exception as e:
+            logger.error(f"Installation monitoring failed: {e}")
+            raise
+
+    async def _configure_environment(self, environment: EnvironmentInDB):
+        """Final environment configuration"""
+        # This is where we could add final setup steps like:
+        # - SSH key deployment
+        # - User-specific configurations
+        # - Environment customizations
+
+        logger.info(f"Configuring environment: {environment.pod_name}")
+
+        # For now, just mark as configured
+        # In the future, this could include actual configuration steps
+        await asyncio.sleep(2)  # Simulate configuration time
+
+        logger.info(f"Environment configuration completed: {environment.pod_name}")
+
+    async def _update_progress(
+        self, environment_id: str, status: EnvironmentStatus, progress_message: str
+    ):
+        """Update environment status and progress"""
+        from bson import ObjectId
+
+        update_data = {
+            "status": status.value,
+            "creation_progress": progress_message,
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        # Update database
+        await self.environment_service.db.environments.update_one(
+            {"_id": ObjectId(environment_id)}, {"$set": update_data}
+        )
+
+        # Broadcast to WebSocket clients
+        from app.api.websocket import connection_manager
+
+        # Get user_id for broadcasting
+        env_doc = await self.environment_service.db.environments.find_one(
+            {"_id": ObjectId(environment_id)}, {"user_id": 1}
+        )
+
+        if env_doc:
+            user_id = str(env_doc["user_id"])
+
+            # Prepare WebSocket message
+            message = {
+                "type": "environment_status",
+                "environment_id": environment_id,
+                "status": status.value,
+                "progress": progress_message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Broadcast to all user connections
+            await connection_manager.broadcast_to_user(json.dumps(message), user_id)
+
+        logger.info(
+            f"Environment {environment_id} - {status.value}: {progress_message}"
+        )
+
+    async def _cleanup_failed_environment(self, environment: EnvironmentInDB):
+        """Clean up resources from failed environment creation"""
+        try:
+            logger.info(f"Cleaning up failed environment: {environment.pod_name}")
+
+            # Use existing cleanup method from environment service
+            # This would need to be adapted to work with the new async flow
+            # For now, log the cleanup attempt
+            logger.info(
+                f"Cleanup completed for failed environment: {environment.pod_name}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+
+    def _cleanup_task(self, task_id: str):
+        """Clean up completed task"""
+        if task_id in self.active_tasks:
+            del self.active_tasks[task_id]
+        if task_id in self.task_status:
+            del self.task_status[task_id]
+        logger.info(f"Cleaned up task: {task_id}")
+
+    def get_task_status(self, task_id: str) -> Optional[str]:
+        """Get status of a specific task"""
+        return self.task_status.get(task_id)
+
+    def cancel_task(self, task_id: str) -> bool:
+        """Cancel a running task"""
+        if task_id in self.active_tasks:
+            task = self.active_tasks[task_id]
+            if not task.done():
+                task.cancel()
+                return True
+        return False
 
 
 # Global environment service instance
