@@ -4,6 +4,9 @@ description: Run test flows and fix issues
 
 Run `./scripts/run-tests.sh` to test all the flows of this system and fix any issues that arise follow the workflow below:
 
+## Notes
+- The test might take a long time to finish, set your command timeout to at least 15 minutes
+
 ## Workflow
 You must follow this workflow strictly:
 - start with the `project-orchestrator` to review the issues and provide a fix plan

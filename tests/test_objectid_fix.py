@@ -6,6 +6,7 @@ from httpx import AsyncClient
 class TestObjectIdFix:
     """Test that ObjectId validation issues are resolved."""
 
+    @pytest.mark.asyncio
     async def test_user_creation_with_objectid_validation(
         self, client: AsyncClient, clean_database, sample_user_data
     ):
@@ -21,6 +22,7 @@ class TestObjectIdFix:
             data["id"]
         )  # Should be valid ObjectId format but as string
 
+    @pytest.mark.asyncio
     async def test_login_with_existing_user_objectid_fix(
         self, client: AsyncClient, clean_database, sample_user_data
     ):
@@ -46,6 +48,7 @@ class TestObjectIdFix:
         assert "refresh_token" in token_data
         assert token_data["token_type"] == "bearer"
 
+    @pytest.mark.asyncio
     async def test_get_current_user_objectid_conversion(
         self, client: AsyncClient, authenticated_user
     ):

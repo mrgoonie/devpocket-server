@@ -12,6 +12,7 @@ async def test_list_templates_unauthenticated(client: AsyncClient):
     assert response.status_code == 403
 
 
+@pytest.mark.asyncio
 async def test_list_templates_authenticated(client: AsyncClient, authenticated_user):
     """Test listing templates with authentication."""
     response = await client.get(
