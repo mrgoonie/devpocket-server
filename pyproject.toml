@@ -41,10 +41,10 @@ allow_zero_version = true
 match = "main"
 prerelease = false
 
-[tool.semantic_release.branches.dev]
-match = "dev/*"
+[tool.semantic_release.branches.beta]
+match = "beta"
 prerelease = true
-prerelease_token = "dev"
+prerelease_token = "beta"
 
 [tool.semantic_release.changelog]
 exclude_commit_patterns = [

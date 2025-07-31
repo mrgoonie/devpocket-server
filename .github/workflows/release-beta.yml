@@ -1,9 +1,9 @@
-name: Production Release
+name: Beta Release
 
 on:
   push:
     branches:
-      - main
+      - beta
   workflow_dispatch:
 
 env:
@@ -11,9 +11,9 @@ env:
 
 jobs:
   release:
-    name: Production Release
+    name: Beta Release
     runs-on: ubuntu-latest
-    concurrency: production-release
+    concurrency: beta-release
     permissions:
       id-token: write
       contents: write
@@ -45,21 +45,21 @@ jobs:
         git config --global user.name "semantic-release"
         git config --global user.email "semantic-release@devpocket.com"
 
-    - name: Run Semantic Release
+    - name: Run Semantic Release (Beta)
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
         REPOSITORY_USERNAME: __token__
         REPOSITORY_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
         # Check what the next version would be
-        echo "Checking if production release is needed..."
+        echo "Checking if beta release is needed..."
         NEXT_VERSION=$(semantic-release version --print 2>/dev/null || echo "No release")
 
         if [ "$NEXT_VERSION" = "No release" ] || echo "$NEXT_VERSION" | grep -q "No release will be made"; then
-          echo "No production release needed"
+          echo "No beta release needed"
           echo "RELEASE_MADE=false" >> $GITHUB_ENV
         else
-          echo "Making production release with version: $NEXT_VERSION"
+          echo "Making beta release with version: $NEXT_VERSION"
           semantic-release version
           echo "RELEASE_MADE=true" >> $GITHUB_ENV
           echo "VERSION=$NEXT_VERSION" >> $GITHUB_ENV
@@ -68,37 +68,38 @@ jobs:
     - name: Build Docker image
       if: env.RELEASE_MADE == 'true'
       run: |
-        # Build and tag the Docker image
+        # Build and tag the Docker image for beta
         docker build --platform linux/amd64 -t digitop/devpocket-api:${{ env.VERSION }} .
-        docker tag digitop/devpocket-api:${{ env.VERSION }} digitop/devpocket-api:latest
+        docker tag digitop/devpocket-api:${{ env.VERSION }} digitop/devpocket-api:beta
 
         # Optional: Add Docker Hub push here if needed
         # docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PAT }}
         # docker push digitop/devpocket-api:${{ env.VERSION }}
-        # docker push digitop/devpocket-api:latest
+        # docker push digitop/devpocket-api:beta
 
-    - name: Deploy to production
+    - name: Deploy to beta environment
       if: env.RELEASE_MADE == 'true'
       uses: "digitopvn/diginext-actions@v2"
       with:
         api_key: ${{ secrets.DX_API_KEY }}
         cluster: dxupprod
         registry: digitopdockerhub
-        deploy_env: prod
+        deploy_env: beta
         tail: false
         port: 8000
 
     - name: Create release summary
       if: env.RELEASE_MADE == 'true'
       run: |
-        echo "## 🚀 Production Release Deployed" >> $GITHUB_STEP_SUMMARY
+        echo "## 🧪 Beta Release Deployed" >> $GITHUB_STEP_SUMMARY
         echo "- **Version**: ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Branch**: main" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: beta" >> $GITHUB_STEP_SUMMARY
         echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Deployed**: ✅ Production" >> $GITHUB_STEP_SUMMARY
+        echo "- **Deployed**: ✅ Beta Environment" >> $GITHUB_STEP_SUMMARY
+        echo "- **Type**: Pre-release" >> $GITHUB_STEP_SUMMARY
 
   notify-failure:
-    name: Notify Release Failure
+    name: Notify Beta Release Failure
     runs-on: ubuntu-latest
     needs: [release]
     if: failure()
@@ -106,6 +107,6 @@ jobs:
     steps:
     - name: Notify failure
       run: |
-        echo "Production release failed! Check the logs above for details."
+        echo "Beta release failed! Check the logs above for details."
         echo "Failed commit: ${{ github.sha }}"
         echo "Failed branch: ${{ github.ref }}"
