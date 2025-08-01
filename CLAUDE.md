@@ -253,7 +253,6 @@ The application includes production-ready Docker configuration with:
 ## Development rules
 
 - ask questions for clarification of uncleared requests
-- always create/update `./plans/<FEATURE_NAME>_TASKS.md` to manage todos in every feature implementation/progress, update status of this file after finish each task
-- use `./scripts/run-tests.sh` to run tests after finish each task, make sure all of them pass
+- use `./scripts/run-tests.sh` to run tests after finish each task, make sure all of them pass (set long command timeout since it will take up to 5-7 minutes to run all tests)
 - always update the related docs in `./docs` folder if the code changes affect the docs
 - use `source venv/bin/activate` to activate the virtual environment before running any command

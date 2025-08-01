@@ -1,4 +1,4 @@
-# Test Dockerfile for DevPocket Server - Optimized for caching
+# Lightweight Test Dockerfile for Unit Tests Only - Optimized for speed
 FROM python:3.11-slim AS base
 
 # Set environment variables
@@ -8,14 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     PIP_TIMEOUT=300
 
-# Install system dependencies in one layer with minimal packages
+# Install minimal system dependencies (no build tools for unit tests)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libffi-dev \
-    libssl-dev \
     curl \
-    tmux \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -25,11 +20,10 @@ RUN groupadd -r testuser && useradd -r -g testuser -s /bin/bash -d /app testuser
 # Set working directory
 WORKDIR /app
 
-# Copy and install Python dependencies first (better caching)
-COPY requirements.txt requirements-test.txt ./
+# Copy and install Python dependencies (unit test optimized)
+COPY requirements-test-unit.txt ./
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
-    pip install -r requirements-test.txt
+    pip install -r requirements-test-unit.txt
 
 # Copy application code
 COPY app/ ./app/
@@ -43,5 +37,5 @@ RUN mkdir -p /app/htmlcov /app/logs && \
 # Switch to test user
 USER testuser
 
-# Default command - exclude integration tests for Docker builds
+# Default command - unit tests only with coverage
 CMD ["pytest", "tests/", "-m", "not integration", "-v", "--cov=app", "--cov-report=html", "--cov-report=term-missing"]

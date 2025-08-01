@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -13,9 +14,80 @@ from app.services.template_service import template_service
 
 # Ensure test environment is detected
 os.environ["TESTING"] = "true"
+os.environ["ENVIRONMENT"] = "test"
 
 # Test database configuration
 TEST_DB_NAME = "devpocket_test"
+
+
+def pytest_collection_modifyitems(config, items):
+    """Automatically add markers to tests based on file patterns and test names."""
+    for item in items:
+        # Get the test file path relative to the tests directory
+        test_file = Path(item.fspath).name
+        test_name = item.name
+
+        # Add integration marker for integration test files
+        if "integration" in test_file.lower():
+            item.add_marker(pytest.mark.integration)
+            item.add_marker(pytest.mark.requires_kubeconfig)
+
+        # Add specific markers based on test file patterns
+        if "auth" in test_file.lower() or "auth" in test_name.lower():
+            item.add_marker(pytest.mark.auth)
+
+        if "environment" in test_file.lower() or "environment" in test_name.lower():
+            item.add_marker(pytest.mark.environment)
+
+        if "websocket" in test_file.lower() or "websocket" in test_name.lower():
+            item.add_marker(pytest.mark.websocket)
+
+        if "api" in test_file.lower() or test_file.startswith("test_api"):
+            item.add_marker(pytest.mark.api)
+
+        if "service" in test_file.lower() or "service" in test_name.lower():
+            item.add_marker(pytest.mark.service)
+
+        if "cluster" in test_file.lower() or "cluster" in test_name.lower():
+            item.add_marker(pytest.mark.external)
+
+        # Mark database-related tests
+        if any(keyword in test_name.lower() for keyword in ["database", "db", "mongo"]):
+            item.add_marker(pytest.mark.database)
+
+        # Mark all non-integration tests as unit tests
+        if not any(marker.name == "integration" for marker in item.iter_markers()):
+            item.add_marker(pytest.mark.unit)
+
+
+def pytest_configure(config):
+    """Configure pytest with custom settings."""
+    # Set environment variables
+    os.environ["TESTING"] = "true"
+    os.environ["ENVIRONMENT"] = "test"
+
+    # Add markers programmatically
+    markers = [
+        "integration: mark test as an integration test requiring external resources",
+        "unit: mark test as a unit test (default for non-integration tests)",
+        "api: mark test as an API endpoint test",
+        "service: mark test as a service layer test",
+        "websocket: mark test as a WebSocket functionality test",
+        "auth: mark test as an authentication functionality test",
+        "environment: mark test as an environment management test",
+        "database: mark test as requiring database operations",
+        "external: mark test as requiring external services or network calls",
+        "requires_kubeconfig: mark test as requiring kubeconfig file access",
+    ]
+
+    for marker in markers:
+        config.addinivalue_line("markers", marker)
+
+
+def pytest_unconfigure(config):
+    """Clean up after all tests are done."""
+    # Clean up environment variables
+    os.environ.pop("TESTING", None)
 
 
 @pytest.fixture(scope="session")

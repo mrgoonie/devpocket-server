@@ -1,14 +1,15 @@
 services:
-  # Test runner service
+  # Test runner service (optimized for unit tests)
   test-runner:
     build:
       context: .
-      dockerfile: Dockerfile.test
+      dockerfile: Dockerfile.test.unit
       platforms:
         - linux/amd64
     volumes:
       - .:/app
       - test-coverage:/app/htmlcov
+      - test-reports:/app/reports
     environment:
       - MONGODB_URL=mongodb://testuser:testpass@mongo-test:27017/?authSource=admin
       - DATABASE_NAME=devpocket_test
@@ -17,15 +18,58 @@ services:
       - DEBUG=true
       - SECRET_KEY=test-secret-key-for-testing-only
       - LOG_LEVEL=WARNING
-      # TESTING variable can be overridden at runtime for integration tests
+      - TESTING=true
+      # Timeout settings to prevent hanging
+      - PYTEST_TIMEOUT=300
+      - ASYNC_TIMEOUT=30
     depends_on:
-      - mongo-test
-      - redis-test
+      mongo-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
     networks:
       - test-network
     labels:
       - "test=devpocket"
-    command: pytest tests/ -v
+    # Default to safe unit tests - can be overridden
+    command: ["pytest", "tests/", "-m", "not integration", "-v", "--tb=short"]
+
+  # Integration test runner service (separate to prevent hanging issues)
+  integration-test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      platforms:
+        - linux/amd64
+    volumes:
+      - .:/app
+      - test-coverage:/app/htmlcov
+      - test-reports:/app/reports
+      # Mount kubeconfig if available
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - MONGODB_URL=mongodb://testuser:testpass@mongo-test:27017/?authSource=admin
+      - DATABASE_NAME=devpocket_integration_test
+      - REDIS_URL=redis://redis-test:6379
+      - ENVIRONMENT=test
+      - DEBUG=true
+      - SECRET_KEY=test-secret-key-for-integration-testing
+      - LOG_LEVEL=INFO
+      - TESTING=false  # Allow real K8s operations
+      # Longer timeouts for integration tests
+      - PYTEST_TIMEOUT=600
+      - ASYNC_TIMEOUT=60
+    depends_on:
+      mongo-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    labels:
+      - "test=devpocket"
+    # Run integration tests with strict limits
+    command: ["pytest", "tests/", "-m", "integration", "-v", "-s", "--tb=short", "--maxfail=1"]
 
   # Test MongoDB
   mongo-test:
@@ -80,5 +124,8 @@ volumes:
     labels:
       - "test=devpocket"
   test-coverage:
+    labels:
+      - "test=devpocket"
+  test-reports:
     labels:
       - "test=devpocket"

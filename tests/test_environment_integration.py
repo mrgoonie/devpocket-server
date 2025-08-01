@@ -3,6 +3,9 @@ Integration tests for environment creation with Kubernetes
 
 These tests create actual Kubernetes resources and validate the full environment
 creation workflow including tmux session management and ConfigMap-based initialization.
+
+Note: These are integration tests that require a Kubernetes cluster with valid kubeconfig.
+They will be skipped automatically if no kubeconfig is available.
 """
 
 import asyncio
@@ -35,6 +38,62 @@ from app.services.cluster_service import cluster_service
 from app.services.environment_service import environment_service
 from app.services.template_service import template_service
 from app.services.tmux_service import tmux_manager
+
+
+def check_kubeconfig_available() -> tuple[bool, str]:
+    """Check if kubeconfig is available for integration tests
+
+    Returns:
+        tuple[bool, str]: (available, reason/path)
+    """
+    try:
+        # Check for OVH kubeconfig first
+        ovh_kubeconfig = Path(__file__).parent.parent / "k8s" / "kube_config_ovh.yaml"
+        if ovh_kubeconfig.exists():
+            # Validate the kubeconfig file has content
+            try:
+                with open(ovh_kubeconfig, "r") as f:
+                    content = f.read().strip()
+                    if content and ("clusters:" in content or "apiVersion:" in content):
+                        return True, f"Using OVH kubeconfig: {ovh_kubeconfig}"
+            except Exception as e:
+                print(f"Warning: OVH kubeconfig exists but is invalid: {e}")
+
+        # Check for default kubeconfig
+        default_kubeconfig = os.path.expanduser("~/.kube/config")
+        if os.path.exists(default_kubeconfig):
+            try:
+                with open(default_kubeconfig, "r") as f:
+                    content = f.read().strip()
+                    if content and ("clusters:" in content or "apiVersion:" in content):
+                        return True, f"Using default kubeconfig: {default_kubeconfig}"
+            except Exception as e:
+                print(f"Warning: Default kubeconfig exists but is invalid: {e}")
+
+        # Check KUBECONFIG environment variable
+        kubeconfig_env = os.environ.get("KUBECONFIG")
+        if kubeconfig_env and os.path.exists(kubeconfig_env):
+            try:
+                with open(kubeconfig_env, "r") as f:
+                    content = f.read().strip()
+                    if content and ("clusters:" in content or "apiVersion:" in content):
+                        return True, f"Using KUBECONFIG env: {kubeconfig_env}"
+            except Exception as e:
+                print(f"Warning: KUBECONFIG env file exists but is invalid: {e}")
+
+        return False, "No valid kubeconfig found in standard locations"
+    except Exception as e:
+        return False, f"Error checking kubeconfig: {e}"
+
+
+def skip_if_no_kubeconfig():
+    """Decorator to skip tests if kubeconfig is not available"""
+    available, reason = check_kubeconfig_available()
+    if available:
+        print(f"Integration tests enabled: {reason}")
+    return pytest.mark.skipif(
+        not available, reason=f"Integration tests skipped: {reason}"
+    )
 
 
 class KubernetesTestManager:
@@ -149,10 +208,17 @@ class KubernetesTestManager:
 @pytest_asyncio.fixture
 async def k8s_manager():
     """Kubernetes test manager fixture"""
-    manager = KubernetesTestManager()
-    await manager.setup_kubernetes_client()  # This will raise exception if fails
+    available, reason = check_kubeconfig_available()
+    if not available:
+        pytest.skip(f"Integration tests skipped: {reason}")
 
-    await manager.create_test_namespace()
+    manager = KubernetesTestManager()
+    try:
+        await manager.setup_kubernetes_client()  # This will raise exception if fails
+        await manager.create_test_namespace()
+    except Exception as e:
+        pytest.skip(f"Failed to setup Kubernetes client: {e}")
+
     yield manager
     await manager.cleanup_all_resources()
 
@@ -160,6 +226,10 @@ async def k8s_manager():
 @pytest_asyncio.fixture
 async def test_cluster(clean_database):
     """Create a test cluster with local kubeconfig"""
+    available, reason = check_kubeconfig_available()
+    if not available:
+        pytest.skip(f"Integration tests skipped: {reason}")
+
     db = clean_database
     cluster_service.set_database(db)
 
@@ -266,6 +336,7 @@ async def test_template(clean_database):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@skip_if_no_kubeconfig()
 async def test_environment_creation_full_workflow(
     clean_database, k8s_manager, test_cluster, test_template
 ):
@@ -433,6 +504,7 @@ async def test_environment_creation_full_workflow(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@skip_if_no_kubeconfig()
 async def test_tmux_session_management():
     """Test tmux session creation and management"""
     test_env_id = str(uuid.uuid4())
@@ -475,6 +547,7 @@ async def test_tmux_session_management():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@skip_if_no_kubeconfig()
 async def test_environment_logs_and_status(
     clean_database, k8s_manager, test_cluster, test_template
 ):
@@ -561,6 +634,7 @@ async def test_environment_logs_and_status(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@skip_if_no_kubeconfig()
 async def test_template_loading_from_yaml():
     """Test loading templates from YAML files"""
     # Load templates from YAML files
