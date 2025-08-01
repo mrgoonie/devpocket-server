@@ -45,6 +45,22 @@ app/
 
 **Security Middleware Chain**: Multiple middleware layers handle security (rate limiting, CORS, security headers) before requests reach route handlers.
 
+## Tmux Session Management
+
+The application now uses tmux for persistent terminal sessions in development environments:
+
+**Session Architecture**: Each environment runs a tmux session that persists across WebSocket disconnections and container restarts (via persistent volumes).
+
+**Session Lifecycle**:
+- Sessions are created when environments start and stored with format `devpocket_{environment_id}`
+- Multiple WebSocket connections can attach to the same session
+- Sessions persist in `/home/devpocket/.tmux/` on persistent storage
+- Automatic session recovery on reconnection
+
+**ConfigMap-based Initialization**: Startup scripts are now stored in Kubernetes ConfigMaps instead of deployment commands, preventing pod crashes from script errors.
+
+**Template Management**: Templates are now stored as YAML files in `./scripts/templates/` and can be loaded into the database using `scripts/load_templates.py`.
+
 ## Development Commands
 
 ### Local Development
@@ -115,6 +131,12 @@ open http://localhost:8000/docs
 ```bash
 # Add a default cluster credentials to database
 ENV_FILE=.env.prod python3 scripts/add_default_ovh_cluster.py
+
+# Load templates from YAML files
+python3 scripts/load_templates.py
+
+# Load templates with production config
+ENV_FILE=.env.prod python3 scripts/load_templates.py
 
 # Show available default templates (no database required)
 python3 scripts/show_default_templates.py

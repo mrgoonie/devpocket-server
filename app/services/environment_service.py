@@ -25,6 +25,7 @@ from app.models.environment import (
 from app.models.user import UserInDB
 from app.services.kubernetes_log_service import kubernetes_log_service
 from app.services.template_service import template_service
+from app.services.tmux_service import tmux_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -32,31 +33,46 @@ logger = structlog.get_logger(__name__)
 # Check if we're in test mode
 def _is_test_environment():
     """Detect if we're running in a test environment"""
-    # Check explicit environment variables
-    if os.environ.get("TESTING", "false").lower() == "true":
-        return True
-    if os.environ.get("ENVIRONMENT", "").lower() == "test":
+    # Check explicit environment variables first - allow override
+    testing_env = os.environ.get("TESTING", "").lower()
+    if testing_env == "false":
+        # Explicit override to disable test mode (for integration tests)
+        logger.info("Test mode explicitly disabled via TESTING=false")
+        return False
+    if testing_env == "true":
+        logger.info("Test mode explicitly enabled via TESTING=true")
         return True
 
-    # Check if running under pytest
+    if os.environ.get("ENVIRONMENT", "").lower() == "test":
+        logger.info("Test mode enabled via ENVIRONMENT=test")
+        return True
+
+    # Check if running under pytest (only if not explicitly overridden)
     try:
         import sys
 
         if "pytest" in sys.modules:
+            logger.info("Test mode detected via pytest in sys.modules")
             return True
         if any("pytest" in arg for arg in sys.argv):
+            logger.info("Test mode detected via pytest in sys.argv")
             return True
     except Exception:
         pass
 
     # Check if using test database
     if "test" in str(settings.MONGODB_URL).lower():
+        logger.info("Test mode detected via test database URL")
         return True
 
+    logger.info("Production mode detected")
     return False
 
 
-IS_TEST_ENV = _is_test_environment()
+# Make test environment detection dynamic rather than static
+def is_test_environment():
+    """Dynamic check for test environment - respects runtime environment changes"""
+    return _is_test_environment()
 
 
 class EnvironmentService:
@@ -140,7 +156,7 @@ class EnvironmentService:
                 )
                 try:
                     # In test mode, simulate container creation directly here
-                    if IS_TEST_ENV:
+                    if is_test_environment():
                         logger.info(
                             f"Test mode: Simulating environment creation for {env_data.name}"
                         )
@@ -439,6 +455,370 @@ sleep infinity
 
         return f"echo '{encoded_script}' | base64 -d > /tmp/init.sh && chmod +x /tmp/init.sh && /tmp/init.sh"
 
+    def _create_tmux_startup_script(self, commands: List[str]) -> str:
+        """Create a tmux-enabled startup script with ConfigMap support"""
+
+        # Create tmux configuration
+        tmux_config = """# DevPocket tmux configuration
+set -g default-terminal "screen-256color"
+set -g history-limit 50000
+set -g mouse on
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+set -g status-bg colour235
+set -g status-fg colour255
+set -g status-left '[#S] '
+set -g status-right '%Y-%m-%d %H:%M'
+set -g automatic-rename on
+set -g set-titles on
+set -g set-titles-string '#T'
+"""
+
+        # Separate critical commands (must succeed) from optional commands
+        critical_commands = []
+        optional_commands = []
+
+        for cmd in commands:
+            # Commands that are critical for basic container functionality
+            if any(
+                critical_pattern in cmd.lower()
+                for critical_pattern in [
+                    "useradd",
+                    "usermod",
+                    "mkdir -p /home",
+                    "chown",
+                    "passwd",
+                    "sudoers",
+                    "tmux",
+                ]
+            ):
+                critical_commands.append(cmd)
+            else:
+                optional_commands.append(cmd)
+
+        # Add tmux installation to critical commands if not present
+        has_tmux_install = any(
+            "tmux" in cmd.lower() for cmd in critical_commands + optional_commands
+        )
+        if not has_tmux_install:
+            # Insert tmux installation after apt-get update
+            tmux_install_cmd = "apt-get install -y tmux"
+            for i, cmd in enumerate(critical_commands):
+                if "apt-get install" in cmd and "tmux" not in cmd:
+                    critical_commands[i] = cmd + " tmux"
+                    break
+            else:
+                critical_commands.append(tmux_install_cmd)
+
+        # Create script content with tmux integration
+        script_content = f"""#!/bin/bash
+set -e
+
+# Initialize log file and status tracking
+LOG_FILE=/var/log/devpocket-init.log
+STATUS_FILE=/tmp/devpocket-status
+PROGRESS_FILE=/tmp/devpocket-progress
+TMUX_CONFIG_FILE=/home/devpocket/.tmux.conf
+
+echo '=== DevPocket Environment Initialization Started ===' | tee $LOG_FILE
+echo "Timestamp: $(date)" | tee -a $LOG_FILE
+echo 'INITIALIZING' > $STATUS_FILE
+echo '0' > $PROGRESS_FILE
+
+# Function to update progress
+update_progress() {{
+    echo "$1" > $PROGRESS_FILE
+    echo "[PROGRESS] $1% - $2" | tee -a $LOG_FILE
+}}
+
+# Function to execute critical commands with retry
+execute_critical() {{
+    local max_retries=3
+    local retry_count=0
+    local cmd="$1"
+
+    while [ $retry_count -lt $max_retries ]; do
+        echo "[CRITICAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE
+        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then
+            echo "[CRITICAL] SUCCESS: $cmd" | tee -a $LOG_FILE
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo "[CRITICAL] RETRY: $cmd (attempt $retry_count failed, waiting 5s)" | tee -a $LOG_FILE
+                sleep 5
+            else
+                echo "[CRITICAL] FAILED: $cmd (all $max_retries attempts failed)" | tee -a $LOG_FILE
+                echo "[CRITICAL] Container initialization failed. Exiting." | tee -a $LOG_FILE
+                echo 'ERROR' > $STATUS_FILE
+                exit 1
+            fi
+        fi
+    done
+}}
+
+# Function to execute optional commands
+execute_optional() {{
+    local max_retries=2
+    local retry_count=0
+    local cmd="$1"
+
+    while [ $retry_count -lt $max_retries ]; do
+        echo "[OPTIONAL] Executing (attempt $((retry_count + 1))/$max_retries): $cmd" | tee -a $LOG_FILE
+        if eval "$cmd" 2>&1 | tee -a $LOG_FILE; then
+            echo "[OPTIONAL] SUCCESS: $cmd" | tee -a $LOG_FILE
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo "[OPTIONAL] RETRY: $cmd (attempt $retry_count failed, waiting 3s)" | tee -a $LOG_FILE
+                sleep 3
+            else
+                echo "[OPTIONAL] FAILED: $cmd (all $max_retries attempts failed, continuing anyway)" | tee -a $LOG_FILE
+                return 1
+            fi
+        fi
+    done
+}}
+
+# Execute critical commands (must succeed)
+echo '=== Executing Critical Setup Commands ===' | tee -a $LOG_FILE
+update_progress 10 'Starting critical setup'
+"""
+
+        # Add critical commands with progress tracking
+        critical_progress_increment = (
+            30 / max(len(critical_commands), 1) if critical_commands else 0
+        )
+        current_progress = 10
+
+        for i, cmd in enumerate(critical_commands):
+            script_content += f"execute_critical '{cmd}'\n"
+            current_progress += critical_progress_increment
+            script_content += f"update_progress {int(current_progress)} 'Critical setup {i+1}/{len(critical_commands)} completed'\n"
+
+        # Add tmux configuration setup
+        script_content += f"""
+# Setup tmux configuration
+echo '=== Setting up tmux configuration ===' | tee -a $LOG_FILE
+update_progress 40 'Configuring tmux'
+
+# Create tmux config for devpocket user
+cat > $TMUX_CONFIG_FILE << 'EOF'
+{tmux_config}
+EOF
+
+# Set ownership for devpocket user
+chown devpocket:devpocket $TMUX_CONFIG_FILE
+
+# Start tmux server as devpocket user (will be used later for sessions)
+echo '[TMUX] Starting tmux server' | tee -a $LOG_FILE
+su - devpocket -c 'tmux new-session -d -s init_session "echo Starting DevPocket Environment && sleep 1"' || true
+
+update_progress 45 'Tmux server started'
+"""
+
+        # Add optional commands section
+        script_content += f"""
+# Execute optional commands (failures are logged but don't stop initialization)
+echo '=== Executing Optional Setup Commands ===' | tee -a $LOG_FILE
+update_progress 50 'Starting optional setup'
+FAILED_COMMANDS=()
+"""
+
+        # Add optional commands with progress tracking
+        optional_progress_increment = (
+            35 / max(len(optional_commands), 1) if optional_commands else 0
+        )
+        current_progress = 50
+
+        for i, cmd in enumerate(optional_commands):
+            script_content += f"if ! execute_optional '{cmd}'; then\n"
+            script_content += f"    FAILED_COMMANDS+=('{cmd}')\n"
+            script_content += f"fi\n"
+            current_progress += optional_progress_increment
+            script_content += f"update_progress {int(current_progress)} 'Optional setup {i+1}/{len(optional_commands)} completed'\n"
+
+        # Add completion section with tmux session setup
+        script_content += f"""
+# Setup default tmux session for user
+echo '=== Setting up default tmux session ===' | tee -a $LOG_FILE
+update_progress 90 'Setting up user session'
+
+# Kill the init session and create the default session
+su - devpocket -c 'tmux kill-session -t init_session 2>/dev/null || true'
+su - devpocket -c 'tmux new-session -d -s default -c /home/devpocket/workspace "bash"' || true
+
+echo '[TMUX] Default session created' | tee -a $LOG_FILE
+
+# Report initialization status
+update_progress 95 'Finalizing initialization'
+echo '=== DevPocket Environment Initialization Completed ===' | tee -a $LOG_FILE
+echo "Timestamp: $(date)" | tee -a $LOG_FILE
+
+if [ ${{#FAILED_COMMANDS[@]}} -gt 0 ]; then
+    echo "[WARNING] Some optional commands failed:" | tee -a $LOG_FILE
+    for failed_cmd in "${{FAILED_COMMANDS[@]}}"; do
+        echo "  - $failed_cmd" | tee -a $LOG_FILE
+    done
+    echo "[INFO] Container is running despite these failures. Check logs for details." | tee -a $LOG_FILE
+    echo 'READY_WITH_WARNINGS' > $STATUS_FILE
+else
+    echo "[SUCCESS] All commands executed successfully!" | tee -a $LOG_FILE
+    echo 'READY' > $STATUS_FILE
+fi
+
+# Create health status file
+echo "READY" > /tmp/devpocket-status
+update_progress 100 'Container ready'
+
+# Keep container running with background processes
+echo '=== Container Ready - Starting background services ===' | tee -a $LOG_FILE
+
+# Keep tmux server running and monitor logs
+tmux_monitor() {{
+    while true; do
+        if ! pgrep -f "tmux" > /dev/null; then
+            echo "[TMUX] Tmux server stopped, restarting..." | tee -a $LOG_FILE
+            su - devpocket -c 'tmux new-session -d -s default -c /home/devpocket/workspace "bash"' 2>&1 | tee -a $LOG_FILE
+        fi
+        sleep 30
+    done
+}}
+
+# Start tmux monitor in background
+tmux_monitor &
+
+# Tail logs to keep container active
+tail -f $LOG_FILE &
+sleep infinity
+"""
+
+        # Use base64 encoding to avoid all escaping issues
+        import base64
+
+        encoded_script = base64.b64encode(script_content.encode("utf-8")).decode(
+            "utf-8"
+        )
+
+        return f"echo '{encoded_script}' | base64 -d > /tmp/init.sh && chmod +x /tmp/init.sh && /tmp/init.sh"
+
+    async def _create_configmap_for_environment(
+        self, environment: EnvironmentInDB, startup_script: str
+    ) -> str:
+        """Create ConfigMap with startup script for environment"""
+        import base64
+        import os
+        import tempfile
+
+        import yaml
+        from kubernetes import client
+        from kubernetes.client.exceptions import ApiException
+
+        from app.services.cluster_service import cluster_service
+
+        try:
+            # Get cluster and kubeconfig
+            cluster_service.set_database(self.db)
+            cluster = await cluster_service.get_cluster_by_region(
+                ClusterRegion.SOUTHEAST_ASIA
+            )
+            if not cluster:
+                raise Exception("No active cluster found for Southeast Asia region")
+
+            kubeconfig_content = await cluster_service.get_decrypted_kubeconfig(
+                cluster.id
+            )
+            if not kubeconfig_content:
+                raise Exception("Failed to get kubeconfig for cluster")
+
+            kubeconfig_yaml = (
+                kubeconfig_content  # kubeconfig_content is already decrypted plain text
+            )
+
+            # Create temporary kubeconfig file
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False
+            ) as temp_kubeconfig:
+                temp_kubeconfig.write(kubeconfig_yaml)
+                kubeconfig_path = temp_kubeconfig.name
+
+            try:
+                # Create Kubernetes API client
+                v1_core, _ = self._get_kubernetes_clients(kubeconfig_path)
+
+                # Decode the base64 startup script for ConfigMap
+                decoded_script = base64.b64decode(startup_script.split("'")[1]).decode(
+                    "utf-8"
+                )
+
+                # Create ConfigMap manifest
+                configmap_name = f"env-{environment.pod_name}-init"
+                configmap_manifest = client.V1ConfigMap(
+                    metadata=client.V1ObjectMeta(
+                        name=configmap_name,
+                        namespace=environment.namespace,
+                        labels={
+                            "app": "devpocket",
+                            "environment": environment.pod_name,
+                            "user-id": environment.user_id,
+                        },
+                    ),
+                    data={
+                        "init.sh": decoded_script,
+                        "tmux.conf": """# DevPocket tmux configuration
+set -g default-terminal "screen-256color"
+set -g history-limit 50000
+set -g mouse on
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+set -g status-bg colour235
+set -g status-fg colour255
+set -g status-left '[#S] '
+set -g status-right '%Y-%m-%d %H:%M'
+set -g automatic-rename on
+set -g set-titles on
+set -g set-titles-string '#T'
+""",
+                    },
+                )
+
+                # Create or update ConfigMap
+                try:
+                    v1_core.create_namespaced_config_map(
+                        namespace=environment.namespace, body=configmap_manifest
+                    )
+                    logger.info(
+                        f"Created ConfigMap {configmap_name} for environment {environment.pod_name}"
+                    )
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        v1_core.replace_namespaced_config_map(
+                            name=configmap_name,
+                            namespace=environment.namespace,
+                            body=configmap_manifest,
+                        )
+                        logger.info(
+                            f"Updated ConfigMap {configmap_name} for environment {environment.pod_name}"
+                        )
+                    else:
+                        raise
+
+                return configmap_name
+
+            finally:
+                # Clean up temporary kubeconfig file
+                if os.path.exists(kubeconfig_path):
+                    os.unlink(kubeconfig_path)
+
+        except Exception as e:
+            logger.error(
+                f"Error creating ConfigMap for environment {environment.id}: {e}"
+            )
+            raise
+
     async def recover_environment(self, environment_id: str) -> dict:
         """Recover a failed environment by restarting initialization with enhanced tracking"""
         try:
@@ -717,8 +1097,8 @@ sleep infinity
 
     async def _create_container(self, environment: EnvironmentInDB):
         """Create the actual container/pod in Kubernetes"""
-        # Skip actual container creation in test mode
-        if IS_TEST_ENV:
+        # Skip actual container creation in test mode (check dynamically for integration tests)
+        if _is_test_environment():
             logger.info(
                 f"Test mode: Simulating environment creation for {environment.name}"
             )
@@ -749,6 +1129,7 @@ sleep infinity
             "namespace": False,
             "home_pvc": False,
             "system_pvc": False,
+            "configmap": False,
             "deployment": False,
             "service": False,
         }
@@ -758,10 +1139,35 @@ sleep infinity
                 f"Starting container creation for environment {environment.pod_name}"
             )
 
-            # Get the template-specific startup command
-            startup_command = await self._get_template_startup_command(
-                environment.template
+            # Get template-specific startup commands and create tmux-enabled script
+            template_service.set_database(self.db)
+            template_data = await template_service.get_template_by_name(
+                environment.template.value
             )
+
+            if template_data and template_data.startup_commands:
+                startup_script = self._create_tmux_startup_script(
+                    template_data.startup_commands
+                )
+            else:
+                # Fallback to basic Ubuntu setup with tmux
+                basic_commands = [
+                    "apt-get update",
+                    "apt-get install -y sudo curl wget git vim nano tmux",
+                    "useradd -m -s /bin/bash devpocket",
+                    "echo 'devpocket:devpocket' | chpasswd",
+                    "usermod -aG sudo devpocket",
+                    "echo 'devpocket ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
+                    "mkdir -p /home/devpocket/workspace",
+                    "chown -R devpocket:devpocket /home/devpocket",
+                ]
+                startup_script = self._create_tmux_startup_script(basic_commands)
+
+            # Create ConfigMap with startup script
+            configmap_name = await self._create_configmap_for_environment(
+                environment, startup_script
+            )
+            created_resources["configmap"] = True
 
             # Update status to creating
             from bson import ObjectId
@@ -790,8 +1196,8 @@ sleep infinity
             if not kubeconfig_content:
                 raise Exception("Failed to get kubeconfig for cluster")
 
-            # Decode base64 kubeconfig
-            kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode("utf-8")
+            # kubeconfig_content is already decrypted plain text
+            kubeconfig_yaml = kubeconfig_content
 
             # Create temporary kubeconfig file
             with tempfile.NamedTemporaryFile(
@@ -992,7 +1398,7 @@ sleep infinity
                                         command=["/bin/bash"],
                                         args=[
                                             "-c",
-                                            startup_command,
+                                            "cp /etc/devpocket/init.sh /tmp/init.sh && chmod +x /tmp/init.sh && nohup /tmp/init.sh > /var/log/devpocket-init.log 2>&1 & sleep infinity",
                                         ],
                                         ports=[
                                             client.V1ContainerPort(
@@ -1048,6 +1454,11 @@ sleep infinity
                                                 mount_path="/opt",
                                                 sub_path="opt",
                                             ),
+                                            client.V1VolumeMount(
+                                                name="init-scripts",
+                                                mount_path="/etc/devpocket",
+                                                read_only=True,
+                                            ),
                                         ],
                                         working_dir="/home/devpocket/workspace",
                                         # Health checks to ensure container stays running
@@ -1092,6 +1503,12 @@ sleep infinity
                                         name="system-dirs",
                                         persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
                                             claim_name=f"system-{environment.pod_name}"
+                                        ),
+                                    ),
+                                    client.V1Volume(
+                                        name="init-scripts",
+                                        config_map=client.V1ConfigMapVolumeSource(
+                                            name=configmap_name
                                         ),
                                     ),
                                 ],
@@ -1238,7 +1655,7 @@ sleep infinity
 
     async def get_actual_pod_name(self, environment: EnvironmentInDB) -> Optional[str]:
         """Get the actual pod name from Kubernetes using the deployment name"""
-        if IS_TEST_ENV:
+        if is_test_environment():
             return environment.pod_name  # In test mode, return the stored name
 
         import base64
@@ -1268,8 +1685,8 @@ sleep infinity
                 logger.error("Failed to get kubeconfig for cluster")
                 return None
 
-            # Decode base64 kubeconfig
-            kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode("utf-8")
+            # kubeconfig_content is already decrypted plain text
+            kubeconfig_yaml = kubeconfig_content
 
             # Create temporary kubeconfig file
             with tempfile.NamedTemporaryFile(
@@ -1516,7 +1933,7 @@ sleep infinity
     async def _delete_container(self, environment: EnvironmentInDB):
         """Delete the actual container/pod (simulated)"""
         # Skip actual container deletion in test mode
-        if IS_TEST_ENV:
+        if is_test_environment():
             # In test mode, just log the deletion but keep the environment with TERMINATED status
             logger.info(
                 f"Test mode: Simulated environment deletion for {environment.name}"
@@ -1617,7 +2034,7 @@ sleep infinity
 
             # Check if environment can be restarted
             # In test mode, allow restarting environments in any state
-            if not IS_TEST_ENV and environment.status not in [
+            if not is_test_environment() and environment.status not in [
                 EnvironmentStatus.RUNNING,
                 EnvironmentStatus.STOPPED,
             ]:
@@ -1649,7 +2066,7 @@ sleep infinity
     async def _restart_container(self, environment: EnvironmentInDB):
         """Restart the actual container/pod (simulated)"""
         # Skip actual container restart in test mode
-        if IS_TEST_ENV:
+        if is_test_environment():
             # Update status to running immediately in test mode
             await self.db.environments.update_one(
                 {"_id": environment.id},
@@ -2222,7 +2639,9 @@ class AsyncEnvironmentTaskManager:
         if not kubeconfig_content:
             raise Exception("Failed to get kubeconfig for cluster")
 
-        kubeconfig_yaml = base64.b64decode(kubeconfig_content).decode("utf-8")
+        kubeconfig_yaml = (
+            kubeconfig_content  # kubeconfig_content is already decrypted plain text
+        )
 
         # Create temporary kubeconfig file
         with tempfile.NamedTemporaryFile(

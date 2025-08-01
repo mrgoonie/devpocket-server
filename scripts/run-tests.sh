@@ -120,6 +120,9 @@ main() {
         "environments")
             TEST_CMD="pytest tests/test_environments.py -v"
             ;;
+        "env-integration")
+            TEST_CMD="pytest tests/test_environment_integration.py -v -s --tb=short"
+            ;;
         "coverage")
             TEST_CMD="pytest tests/ --cov=app --cov-report=html --cov-report=term"
             ;;
@@ -145,6 +148,7 @@ main() {
             echo "  auth        - Run authentication tests"
             echo "  health      - Run health check tests"
             echo "  environments - Run environment tests"
+            echo "  env-integration - Run environment integration tests (requires Kubernetes)"
             echo "  coverage    - Run tests with coverage report"
             echo "  fast        - Run tests with fast failure"
             echo "  local       - Run tests locally (not in Docker)"

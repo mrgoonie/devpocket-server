@@ -17,6 +17,7 @@ services:
       - DEBUG=true
       - SECRET_KEY=test-secret-key-for-testing-only
       - LOG_LEVEL=WARNING
+      # TESTING variable can be overridden at runtime for integration tests
     depends_on:
       - mongo-test
       - redis-test

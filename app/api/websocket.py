@@ -15,6 +15,7 @@ from app.models.cluster import ClusterRegion
 from app.models.user import UserInDB
 from app.services.environment_service import environment_service
 from app.services.pty_service import pty_manager
+from app.services.tmux_service import tmux_manager
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -199,13 +200,38 @@ async def websocket_terminal(
             json.dumps(welcome_msg), connection_id
         )
 
-        # Create PTY session only if environment is running
-        pty_session_id = None
+        # Create or attach to tmux session only if environment is running
+        tmux_session_id = None
         if environment.status.value == "running":
-            pty_session_id = f"pty_{connection_id}"
+            # Try to find existing tmux session for this environment
+            existing_sessions = await tmux_manager.list_sessions(
+                environment_id=environment_id
+            )
 
-            def pty_output_callback(data: str):
-                """Callback for PTY output"""
+            if existing_sessions:
+                # Attach to existing session
+                tmux_session_id = existing_sessions[0]
+                logger.info(f"Attaching to existing tmux session: {tmux_session_id}")
+            else:
+                # Create new tmux session
+                tmux_session_id = await tmux_manager.create_session(
+                    environment_id=environment_id,
+                    user_id=str(user.id),
+                    session_name=f"devpocket_{environment_id}",
+                    initial_command="cd /home/devpocket/workspace && bash",
+                )
+
+                if not tmux_session_id:
+                    logger.error(f"Failed to create tmux session for {environment_id}")
+                    await websocket.close(
+                        code=1008, reason="Failed to create terminal session"
+                    )
+                    return
+
+                logger.info(f"Created new tmux session: {tmux_session_id}")
+
+            def tmux_output_callback(data: str):
+                """Callback for tmux output"""
                 try:
                     import asyncio
 
@@ -243,25 +269,29 @@ async def websocket_terminal(
                         )
                         loop.close()
                 except Exception as e:
-                    logger.error(f"Error sending PTY output: {e}")
+                    logger.error(f"Error sending tmux output: {e}")
 
-            # Start PTY session
-            pty_success = await pty_manager.create_session(
-                pty_session_id,
-                environment_id,
-                str(user.id),
-                pty_output_callback,
-                shell_command="su - devpocket",
+            # Attach to tmux session
+            tmux_success = await tmux_manager.attach_to_session(
+                tmux_session_id, tmux_output_callback
             )
 
-            if not pty_success:
-                logger.error(f"Failed to create PTY session for {environment_id}")
+            if not tmux_success:
+                logger.error(f"Failed to attach to tmux session {tmux_session_id}")
                 await websocket.close(
-                    code=1008, reason="Failed to create terminal session"
+                    code=1008, reason="Failed to attach to terminal session"
                 )
                 return
 
-            logger.info(f"PTY session created: {pty_session_id}")
+            logger.info(f"Attached to tmux session: {tmux_session_id}")
+
+            # Send initial session output to client
+            initial_output = await tmux_manager.capture_session_output(tmux_session_id)
+            if initial_output:
+                await connection_manager.send_personal_message(
+                    json.dumps({"type": "output", "data": initial_output}),
+                    connection_id,
+                )
         else:
             logger.info(
                 f"Environment is installing, PTY session will be created once installation completes"
@@ -295,11 +325,11 @@ async def websocket_terminal(
 
                 # Handle different message types
                 if message.get("type") == "input":
-                    # Terminal input - send to PTY only if session exists
-                    if pty_session_id:
+                    # Terminal input - send to tmux only if session exists
+                    if tmux_session_id:
                         input_data = message.get("data", "")
-                        success = await pty_manager.write_to_session(
-                            pty_session_id, input_data
+                        success = await tmux_manager.send_input(
+                            tmux_session_id, input_data
                         )
 
                         if not success:
@@ -332,13 +362,13 @@ async def websocket_terminal(
                     )
 
                 elif message.get("type") == "resize":
-                    # Handle terminal resize only if PTY session exists
-                    if pty_session_id:
+                    # Handle terminal resize only if tmux session exists
+                    if tmux_session_id:
                         cols = message.get("cols", 80)
                         rows = message.get("rows", 24)
 
-                        success = await pty_manager.resize_session(
-                            pty_session_id, cols, rows
+                        success = await tmux_manager.resize_session(
+                            tmux_session_id, cols, rows
                         )
                         logger.debug(
                             f"Terminal resize: {cols}x{rows}, success: {success}"
@@ -363,13 +393,17 @@ async def websocket_terminal(
             pass
 
     finally:
-        # Cleanup PTY session
-        if pty_session_id:
+        # Cleanup tmux session attachment (but keep session alive for persistence)
+        if tmux_session_id:
             try:
-                await pty_manager.close_session(pty_session_id)
-                logger.info(f"Cleaned up PTY session: {pty_session_id}")
+                # Note: We don't kill the tmux session, just detach from it
+                # This allows the session to persist for reconnection
+                await tmux_manager.detach_from_session(
+                    tmux_session_id, tmux_output_callback
+                )
+                logger.info(f"Detached from tmux session: {tmux_session_id}")
             except Exception as e:
-                logger.error(f"Error cleaning up PTY session: {e}")
+                logger.error(f"Error detaching from tmux session: {e}")
 
         # Cleanup WebSocket
         connection_manager.disconnect(connection_id, str(user.id) if user else "")

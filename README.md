@@ -24,10 +24,18 @@ DevPocket Server is a production-ready Python FastAPI backend that powers the De
 - **Persistent storage** for development workspaces
 
 ### 🌐 WebSocket Support
-- **Real-time terminal access** to environments
+- **Real-time terminal access** with tmux session persistence
 - **Live log streaming** from containers
 - **Connection management** with automatic cleanup
 - **Rate limiting** for WebSocket connections
+- **Session recovery** after disconnections
+
+### 🎯 Tmux Session Management
+- **Persistent terminal sessions** that survive disconnections
+- **Multi-client access** to the same session
+- **Session state persistence** via persistent volumes
+- **Automatic session recovery** on reconnection
+- **ConfigMap-based initialization** preventing pod crashes
 
 ### 📊 Monitoring & Observability
 - **Structured logging** with JSON output
@@ -110,14 +118,20 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 export ENV_FILE=.env.prod
 python3 scripts/add_default_ovh_cluster.py
 
+# Load templates from YAML files
+python3 scripts/load_templates.py
+
+# Load templates with production config
+ENV_FILE=.env.prod python3 scripts/load_templates.py
+
 # Show available default templates (no database required)
 python3 scripts/show_default_templates.py
 
-# Seed default environment templates (requires MongoDB)
+# Legacy template seeding (deprecated - use load_templates.py)
 python3 scripts/seed_templates.py
 
 # Force reseed templates (removes existing ones first)
-python3 scripts/seed_templates.py --force
+python3 scripts/load_templates.py --force
 ```
 
 ### 3. Start with Docker Compose
@@ -259,11 +273,31 @@ ws.onmessage = function(event) {
     console.log('Terminal output:', data);
 };
 
+// Send terminal input
 ws.send(JSON.stringify({
     type: 'input',
-    data: 'ls -la\n'
+    data: 'ls -la
+'
+}));
+
+// Resize terminal (tmux session)
+ws.send(JSON.stringify({
+    type: 'resize',
+    cols: 80,
+    rows: 24
+}));
+
+// Ping for keepalive
+ws.send(JSON.stringify({
+    type: 'ping'
 }));
 ```
+
+**Tmux Session Benefits:**
+- Sessions persist across WebSocket disconnections
+- Multiple clients can connect to the same session
+- Session state is preserved in persistent volumes
+- Automatic session recovery when reconnecting
 
 ## 🐳 Docker Deployment
 
@@ -457,10 +491,18 @@ services:
 pip install pytest pytest-asyncio httpx
 
 # Run all tests
-pytest
+./scripts/run-tests.sh
+
+# Run specific test types
+./scripts/run-tests.sh unit
+./scripts/run-tests.sh integration
+./scripts/run-tests.sh env-integration  # Requires Kubernetes
+
+# Run tests locally (not in Docker)
+./scripts/run-tests.sh local
 
 # Run with coverage
-pytest --cov=app --cov-report=html
+./scripts/run-tests.sh coverage
 
 # Run specific test file
 pytest tests/test_auth.py -v
@@ -472,6 +514,25 @@ pytest tests/test_auth.py -v
 - **Integration Tests**: Database and service integration
 - **API Tests**: HTTP endpoint testing
 - **WebSocket Tests**: Real-time connection testing
+- **Environment Integration Tests**: Full Kubernetes workflow testing
+
+### Environment Integration Tests
+
+The new integration tests validate the complete tmux-based environment creation workflow:
+
+```bash
+# Run environment integration tests (requires local Kubernetes)
+./scripts/run-tests.sh env-integration
+
+# Or run directly with pytest
+pytest tests/test_environment_integration.py -v -s
+```
+
+**What's tested:**
+- Kubernetes resource creation (ConfigMaps, PVCs, Deployments, Services)
+- Tmux session management and persistence
+- Environment initialization with ConfigMap-based startup scripts
+- Resource cleanup and database consistency
 
 ### Example Test
 
@@ -637,19 +698,28 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🚀 Roadmap
 
-### v1.1 (Current)
+### v1.1 (Completed)
 - [x] JWT Authentication
 - [x] Google OAuth
 - [x] Environment Management
 - [x] WebSocket Terminal
 - [x] Docker Deployment
 
-### v1.2 (Next)
-- [ ] Kubernetes Integration
+### v1.2 (Current - Tmux Architecture)
+- [x] Kubernetes Integration
+- [x] Tmux Session Management
+- [x] ConfigMap-based Initialization
+- [x] Persistent Terminal Sessions
+- [x] Integration Testing Suite
+- [x] YAML-based Template System
 - [ ] File Upload/Download
 - [ ] Environment Sharing
+
+### v1.3 (Next)
 - [ ] Usage Analytics
 - [ ] API Rate Limiting Per User
+- [ ] Enhanced Session Recovery
+- [ ] Multi-window Tmux Support
 
 ### v2.0 (Future)
 - [ ] Multi-region Deployment

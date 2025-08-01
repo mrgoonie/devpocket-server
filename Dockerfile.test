@@ -1,21 +1,23 @@
-# Test Dockerfile for DevPocket Server
-FROM python:3.11-slim
+# Test Dockerfile for DevPocket Server - Optimized for caching
+FROM python:3.11-slim AS base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    TESTING=true
+    DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in one layer with minimal packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libffi-dev \
     libssl-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    tmux \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Create test user
 RUN groupadd -r testuser && useradd -r -g testuser -s /bin/bash -d /app testuser
@@ -23,13 +25,11 @@ RUN groupadd -r testuser && useradd -r -g testuser -s /bin/bash -d /app testuser
 # Set working directory
 WORKDIR /app
 
-# Copy requirements
+# Copy and install Python dependencies first (better caching)
 COPY requirements.txt requirements-test.txt ./
-
-# Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
-    pip install -r requirements-test.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements-test.txt
 
 # Copy application code
 COPY app/ ./app/

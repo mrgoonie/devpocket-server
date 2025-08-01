@@ -460,6 +460,44 @@ class TemplateService:
         logger.info(f"Template created: {template_data.name}")
         return TemplateInDB(**template_dict)
 
+    async def create_template_from_data(self, template_data: dict) -> TemplateInDB:
+        """Create a template from raw dictionary data (e.g., from YAML file)"""
+        try:
+            # Convert dictionary to TemplateInDB object
+            template = TemplateInDB(
+                _id=ObjectId(),
+                name=template_data["name"],
+                display_name=template_data["display_name"],
+                description=template_data["description"],
+                category=TemplateCategory(template_data["category"]),
+                tags=template_data.get("tags", []),
+                docker_image=template_data["docker_image"],
+                default_port=template_data.get("default_port", 8080),
+                default_resources=template_data.get("default_resources", {}),
+                environment_variables=template_data.get("environment_variables", {}),
+                startup_commands=template_data.get("startup_commands", []),
+                documentation_url=template_data.get("documentation_url"),
+                icon_url=template_data.get("icon_url"),
+                usage_count=0,
+                is_active=True,
+                created_by=ObjectId(SYSTEM_USER_ID),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
+            # Insert into database
+            result = await self.db.templates.insert_one(
+                template.model_dump(by_alias=True)
+            )
+            template.id = str(result.inserted_id)
+
+            logger.info(f"Created template from data: {template.name}")
+            return template
+
+        except Exception as e:
+            logger.error(f"Error creating template from data: {e}")
+            raise
+
     async def update_template(
         self, template_id: str, update_data: TemplateUpdate
     ) -> Optional[TemplateInDB]:

@@ -151,9 +151,13 @@ class KubernetesLogService:
                                 )
                                 break
 
-                            # Decode the line if it's bytes
+                            # Decode the line if it's bytes, handle encoding errors gracefully
                             if isinstance(line, bytes):
-                                line = line.decode("utf-8")
+                                try:
+                                    line = line.decode("utf-8")
+                                except UnicodeDecodeError:
+                                    # Try with error handling for non-UTF8 bytes
+                                    line = line.decode("utf-8", errors="replace")
 
                             # Strip newline and send to callback
                             line = line.rstrip("\n")
