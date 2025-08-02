@@ -196,13 +196,16 @@ class TestEnvironmentCreationEdgeCases:
 
         # Should return validation error
         assert response.status_code == 422
-        error_detail = response.json()["detail"]
+        response_data = response.json()
         # Check that validation error mentions template
-        error_messages = [str(error) for error in error_detail]
+        if "errors" in response_data:
+            error_messages = [str(error) for error in response_data["errors"]]
+        else:
+            error_messages = [str(response_data.get("detail", ""))]
         template_error_found = any("template" in msg.lower() for msg in error_messages)
         assert (
             template_error_found
-        ), f"Expected template validation error, got: {error_detail}"
+        ), f"Expected template validation error, got: {response_data}"
 
     async def test_environment_creation_with_invalid_resource_format(
         self, client: AsyncClient, authenticated_user
@@ -244,11 +247,14 @@ class TestEnvironmentCreationEdgeCases:
 
         # Should return validation error
         assert response.status_code == 422
-        error_detail = response.json()["detail"]
+        response_data = response.json()
         # Check that validation error mentions name
-        error_messages = [str(error) for error in error_detail]
+        if "errors" in response_data:
+            error_messages = [str(error) for error in response_data["errors"]]
+        else:
+            error_messages = [str(response_data.get("detail", ""))]
         name_error_found = any("name" in msg.lower() for msg in error_messages)
-        assert name_error_found, f"Expected name validation error, got: {error_detail}"
+        assert name_error_found, f"Expected name validation error, got: {response_data}"
 
     async def test_environment_creation_with_empty_name(
         self, client: AsyncClient, authenticated_user
@@ -305,9 +311,9 @@ class TestEnvironmentCreationEdgeCases:
         ) as mock_check_limits:
             mock_check_limits.return_value = None  # No limits exceeded
 
-            # Mock database insert to fail
+            # Mock database insert to fail at the service level
             with patch.object(
-                test_database.database.environments,
+                environment_service.db.environments,
                 "insert_one",
                 side_effect=Exception("Database error"),
             ):

@@ -408,9 +408,17 @@ async def websocket_terminal(
                 logger.error(f"Error detaching from tmux session: {e}")
 
         # Cleanup WebSocket
-        connection_manager.disconnect(connection_id, str(user.id) if user else "")
+        try:
+            connection_manager.disconnect(connection_id, str(user.id) if user else "")
+        except Exception as e:
+            logger.error(f"Error disconnecting WebSocket connection: {e}")
+
         if user:
-            websocket_rate_limiter.remove_connection(str(user.id))
+            try:
+                websocket_rate_limiter.remove_connection(str(user.id))
+            except Exception as e:
+                logger.error(f"Error removing rate limiter connection: {e}")
+
             # Clean up WebSocket session
             try:
                 await environment_service.cleanup_websocket_session(

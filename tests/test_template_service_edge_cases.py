@@ -278,9 +278,9 @@ class TestTemplateServiceEdgeCases:
             docker_image="python:3.11",
         )
 
-        # Mock database insert to fail
+        # Mock database insert to fail at the service level
         with patch.object(
-            test_database.database.templates,
+            template_service.db.templates,
             "insert_one",
             side_effect=Exception("Database error"),
         ):

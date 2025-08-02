@@ -143,6 +143,7 @@ class EnvironmentService:
             environment = EnvironmentInDB(**env_dict)
 
             # Start async environment creation task
+            task_id = None
             if self.task_manager:
                 try:
                     task_id = self.task_manager.create_environment_async(
@@ -158,6 +159,10 @@ class EnvironmentService:
                                 "updated_at": datetime.now(timezone.utc),
                             }
                         },
+                    )
+
+                    logger.info(
+                        f"Started async environment creation: {env_data.name} (task: {task_id}) for user {user.username}"
                     )
                 except Exception as e:
                     logger.error(
@@ -176,10 +181,6 @@ class EnvironmentService:
                             }
                         },
                     )
-
-                logger.info(
-                    f"Started async environment creation: {env_data.name} (task: {task_id}) for user {user.username}"
-                )
             else:
                 # Fallback to synchronous creation (for testing or when task manager is not available)
                 logger.warning(
