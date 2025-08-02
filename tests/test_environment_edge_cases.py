@@ -7,6 +7,7 @@ This module tests the specific issues that were fixed:
 3. Environment creation with malformed data
 """
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -311,14 +312,26 @@ class TestEnvironmentCreationEdgeCases:
         ) as mock_check_limits:
             mock_check_limits.return_value = None  # No limits exceeded
 
-            # Mock the database insert_one method to fail
-            with patch.object(
-                environment_service.db.environments,
-                "insert_one",
-                side_effect=Exception("Database error"),
-            ):
-                with pytest.raises(Exception, match="Database error"):
-                    await environment_service.create_environment(mock_user, env_data)
+            # Mock the task manager to not exist (force synchronous path)
+            environment_service.task_manager = None
+
+            # Mock test environment detection to return False (force production path)
+            with patch.dict(os.environ, {"TESTING": "false"}):
+                # Mock the database insert_one method to fail
+                with patch.object(
+                    environment_service.db.environments,
+                    "insert_one",
+                    side_effect=Exception("Database error"),
+                ):
+                    from fastapi import HTTPException
+
+                    with pytest.raises(HTTPException) as exc_info:
+                        await environment_service.create_environment(
+                            mock_user, env_data
+                        )
+                    assert exc_info.value.status_code == 500
+                    # In production mode, any error during environment creation should raise HTTPException
+                    assert "failed" in str(exc_info.value.detail).lower()
 
     async def test_environment_creation_with_resource_limit_exceeded(
         self, test_database

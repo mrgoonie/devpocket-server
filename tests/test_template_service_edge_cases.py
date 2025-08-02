@@ -7,7 +7,7 @@ This module tests the specific template service issues that were fixed:
 3. Template validation error handling
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from bson import ObjectId
@@ -278,14 +278,31 @@ class TestTemplateServiceEdgeCases:
             docker_image="python:3.11",
         )
 
-        # Mock database insert to fail at the service level
+        # Mock get_template_by_name to return None (no existing template)
         with patch.object(
-            template_service.db.templates,
-            "insert_one",
-            side_effect=Exception("Database error"),
+            template_service,
+            "get_template_by_name",
+            new_callable=AsyncMock,
+            return_value=None,
         ):
-            with pytest.raises(Exception, match="Database error"):
-                await template_service.create_template(template_data)
+            # Create a mock database that fails on insert_one
+            mock_db = MagicMock()
+            mock_templates = MagicMock()
+            mock_templates.insert_one = AsyncMock(
+                side_effect=Exception("Database error")
+            )
+            mock_db.templates = mock_templates
+
+            # Replace the database temporarily
+            original_db = template_service.db
+            template_service.db = mock_db
+
+            try:
+                with pytest.raises(Exception, match="Database error"):
+                    await template_service.create_template(template_data)
+            finally:
+                # Restore original database
+                template_service.db = original_db
 
     async def test_template_update_empty_data(self, test_database):
         """Test template update with empty update data."""

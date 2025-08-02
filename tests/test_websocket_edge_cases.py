@@ -190,7 +190,22 @@ class TestWebSocketTerminalErrorPaths:
 
         # Mock environment in running state
         mock_environment = MagicMock()
-        mock_environment.status = "running"  # Use string value
+
+        # Create a custom status mock that behaves like both string and has .value
+        class MockStatus:
+            def __init__(self, value):
+                self.value = value
+
+            def __eq__(self, other):
+                return self.value == other
+
+            def __str__(self):
+                return self.value
+
+            def __contains__(self, other):
+                return self.value in other
+
+        mock_environment.status = MockStatus("running")
         mock_environment.name = "running-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
         mock_environment.installation_completed = True
@@ -232,10 +247,10 @@ class TestWebSocketTerminalErrorPaths:
 
                         # Mock tmux manager to fail session creation
                         with patch("app.api.websocket.tmux_manager") as mock_tmux:
-                            mock_tmux.list_sessions.return_value = []
-                            mock_tmux.create_session.return_value = (
-                                None  # Failed to create
-                            )
+                            mock_tmux.list_sessions = AsyncMock(return_value=[])
+                            mock_tmux.create_session = AsyncMock(
+                                return_value=None
+                            )  # Failed to create
                             mock_tmux.detach_from_session = AsyncMock()
 
                             # Call websocket_terminal function
@@ -258,7 +273,22 @@ class TestWebSocketTerminalErrorPaths:
 
         # Mock environment in running state
         mock_environment = MagicMock()
-        mock_environment.status = "running"
+
+        # Create a custom status mock that behaves like both string and has .value
+        class MockStatus:
+            def __init__(self, value):
+                self.value = value
+
+            def __eq__(self, other):
+                return self.value == other
+
+            def __str__(self):
+                return self.value
+
+            def __contains__(self, other):
+                return self.value in other
+
+        mock_environment.status = MockStatus("running")
         mock_environment.name = "running-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
         mock_environment.installation_completed = True
@@ -300,11 +330,13 @@ class TestWebSocketTerminalErrorPaths:
 
                         # Mock tmux manager to fail session attach
                         with patch("app.api.websocket.tmux_manager") as mock_tmux:
-                            mock_tmux.list_sessions.return_value = []
-                            mock_tmux.create_session.return_value = "session_123"
-                            mock_tmux.attach_to_session.return_value = (
-                                False  # Failed to attach
+                            mock_tmux.list_sessions = AsyncMock(return_value=[])
+                            mock_tmux.create_session = AsyncMock(
+                                return_value="session_123"
                             )
+                            mock_tmux.attach_to_session = AsyncMock(
+                                return_value=False
+                            )  # Failed to attach
                             mock_tmux.detach_from_session = AsyncMock()
 
                             # Call websocket_terminal function

@@ -1840,8 +1840,27 @@ set -g set-titles-string '#T'
 
             if "status" in update_data and update_data["status"]:
                 # Validate status transition
-                new_status = update_data["status"]
+                new_status_str = update_data["status"]
                 current_status = environment.status
+
+                # Convert string status to enum for validation
+                try:
+                    new_status = EnvironmentStatus(new_status_str)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid status value: {new_status_str}",
+                    )
+
+                # Convert current status to enum if it's a string
+                if isinstance(current_status, str):
+                    try:
+                        current_status = EnvironmentStatus(current_status)
+                    except ValueError:
+                        logger.warning(
+                            f"Invalid current status in database: {current_status}"
+                        )
+                        current_status = EnvironmentStatus.ERROR
 
                 # Define valid status transitions
                 valid_transitions = {
@@ -1886,6 +1905,7 @@ set -g set-titles-string '#T'
                         EnvironmentStatus.TERMINATED,
                     ],
                     EnvironmentStatus.FAILED: [
+                        EnvironmentStatus.RUNNING,
                         EnvironmentStatus.TERMINATED,
                     ],
                     EnvironmentStatus.TERMINATED: [],  # Terminal state
