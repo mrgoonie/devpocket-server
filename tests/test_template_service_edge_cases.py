@@ -139,54 +139,35 @@ class TestTemplateServicePydanticCompatibility:
             assert "model_dump" not in str(e).lower()
             pytest.fail(f"Template update failed with serialization error: {e}")
 
-    async def test_template_serialization_with_mock_object(self, test_database):
-        """Test template operations with mock objects that don't have serialization methods."""
+    async def test_template_serialization_compatibility_layer(self, test_database):
+        """Test that template service handles both Pydantic v1 and v2 serialization methods."""
         template_service.set_database(test_database.database)
 
-        # Create a mock object that doesn't have dict() or model_dump()
-        class MockTemplateData:
-            def __init__(self):
-                self.name = "mock-template"
-                self.display_name = "Mock Template"
-                self.description = "Mock description"
-                self.category = TemplateCategory.PROGRAMMING_LANGUAGE
-                self.docker_image = "python:3.11"
-                self.startup_commands = ["echo 'mock'"]
+        # Create a real TemplateCreate object
+        template_data = TemplateCreate(
+            name="serialization-test",
+            display_name="Serialization Test Template",
+            description="Testing serialization compatibility",
+            category=TemplateCategory.PROGRAMMING_LANGUAGE,
+            docker_image="python:3.11",
+            startup_commands=["echo 'test'"],
+        )
 
-        mock_template = MockTemplateData()
+        # Test that the template can be serialized using either method
+        serialized_data = None
+        if hasattr(template_data, "model_dump"):
+            serialized_data = template_data.model_dump()
+        elif hasattr(template_data, "dict"):
+            serialized_data = template_data.dict()
 
-        # Patch the create_template method to use our mock
-        with patch.object(template_service, "_validate_template_data") as mock_validate:
-            mock_validate.return_value = True
+        assert serialized_data is not None
+        assert serialized_data["name"] == "serialization-test"
+        assert serialized_data["category"] == "programming_language"
 
-            # This should handle the lack of serialization methods gracefully
-            try:
-                # The actual service method expects a TemplateCreate object
-                # but we're testing the serialization compatibility layer
-                template_dict = {}
-                if hasattr(mock_template, "dict"):
-                    template_dict = mock_template.dict()
-                elif hasattr(mock_template, "model_dump"):
-                    template_dict = mock_template.model_dump()
-                else:
-                    # Fallback to manual conversion
-                    template_dict = {
-                        "name": mock_template.name,
-                        "display_name": mock_template.display_name,
-                        "description": mock_template.description,
-                        "category": mock_template.category,
-                        "docker_image": mock_template.docker_image,
-                        "startup_commands": mock_template.startup_commands,
-                    }
-
-                assert isinstance(template_dict, dict)
-                assert template_dict["name"] == "mock-template"
-
-            except AttributeError as e:
-                # Should not fail with AttributeError for missing serialization methods
-                pytest.fail(
-                    f"Should handle missing serialization methods gracefully: {e}"
-                )
+        # Test that the service can create the template
+        result = await template_service.create_template(template_data)
+        assert result is not None
+        assert result.name == "serialization-test"
 
 
 @pytest.mark.asyncio

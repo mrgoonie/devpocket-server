@@ -113,13 +113,26 @@ class TestPydanticModelCompatibility:
             resources=None,  # Will use default resources
         )
 
-        # This should not raise an error
-        try:
-            result = await environment_service.create_environment(mock_user, env_data)
-            assert result is not None
-            assert result.name == "test-env-dict"
-        except Exception as e:
-            pytest.fail(f"Environment creation with default resources failed: {e}")
+        # Mock the user limits check to avoid hitting environment limits
+        with patch.object(
+            environment_service, "_check_user_limits"
+        ) as mock_check_limits:
+            mock_check_limits.return_value = None  # No limits exceeded
+
+            with patch.object(environment_service, "_create_container") as mock_create:
+                mock_create.return_value = {"status": "success"}
+
+                # This should not raise an error
+                try:
+                    result = await environment_service.create_environment(
+                        mock_user, env_data
+                    )
+                    assert result is not None
+                    assert result.name == "test-env-dict"
+                except Exception as e:
+                    pytest.fail(
+                        f"Environment creation with default resources failed: {e}"
+                    )
 
     async def test_malformed_resource_object_handling(self, test_database):
         """Test handling of malformed resource objects."""
@@ -184,7 +197,12 @@ class TestEnvironmentCreationEdgeCases:
         # Should return validation error
         assert response.status_code == 422
         error_detail = response.json()["detail"]
-        assert any("template" in str(error).lower() for error in error_detail)
+        # Check that validation error mentions template
+        error_messages = [str(error) for error in error_detail]
+        template_error_found = any("template" in msg.lower() for msg in error_messages)
+        assert (
+            template_error_found
+        ), f"Expected template validation error, got: {error_detail}"
 
     async def test_environment_creation_with_invalid_resource_format(
         self, client: AsyncClient, authenticated_user
@@ -227,7 +245,10 @@ class TestEnvironmentCreationEdgeCases:
         # Should return validation error
         assert response.status_code == 422
         error_detail = response.json()["detail"]
-        assert any("name" in str(error).lower() for error in error_detail)
+        # Check that validation error mentions name
+        error_messages = [str(error) for error in error_detail]
+        name_error_found = any("name" in msg.lower() for msg in error_messages)
+        assert name_error_found, f"Expected name validation error, got: {error_detail}"
 
     async def test_environment_creation_with_empty_name(
         self, client: AsyncClient, authenticated_user
@@ -278,14 +299,20 @@ class TestEnvironmentCreationEdgeCases:
             name="test-env", template=EnvironmentTemplate.PYTHON
         )
 
-        # Mock database insert to fail
+        # Mock user limits check to pass
         with patch.object(
-            test_database.database.environments,
-            "insert_one",
-            side_effect=Exception("Database error"),
-        ):
-            with pytest.raises(Exception):
-                await environment_service.create_environment(mock_user, env_data)
+            environment_service, "_check_user_limits"
+        ) as mock_check_limits:
+            mock_check_limits.return_value = None  # No limits exceeded
+
+            # Mock database insert to fail
+            with patch.object(
+                test_database.database.environments,
+                "insert_one",
+                side_effect=Exception("Database error"),
+            ):
+                with pytest.raises(Exception, match="Database error"):
+                    await environment_service.create_environment(mock_user, env_data)
 
     async def test_environment_creation_with_resource_limit_exceeded(
         self, test_database
@@ -382,13 +409,23 @@ class TestProductionModeScenarios:
             name="test-env", template=EnvironmentTemplate.PYTHON
         )
 
-        # Mock task manager to fail
+        # Mock user limits check to pass
         with patch.object(
-            environment_service.task_manager,
-            "create_environment_async",
-            side_effect=Exception("Task manager error"),
-        ):
-            # Should still create environment record but without async task
-            result = await environment_service.create_environment(mock_user, env_data)
-            assert result is not None
-            assert result.name == "test-env"
+            environment_service, "_check_user_limits"
+        ) as mock_check_limits:
+            mock_check_limits.return_value = None  # No limits exceeded
+
+            # Mock task manager to fail
+            with patch.object(
+                environment_service.task_manager,
+                "create_environment_async",
+                side_effect=Exception("Task manager error"),
+            ):
+                # Should still create environment record but mark it as failed
+                result = await environment_service.create_environment(
+                    mock_user, env_data
+                )
+                assert result is not None
+                assert result.name == "test-env"
+                # Environment should be marked as failed due to task manager error
+                assert result.status.value == "failed"

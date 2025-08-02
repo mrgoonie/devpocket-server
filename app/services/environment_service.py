@@ -144,20 +144,38 @@ class EnvironmentService:
 
             # Start async environment creation task
             if self.task_manager:
-                task_id = self.task_manager.create_environment_async(
-                    str(result.inserted_id), environment
-                )
+                try:
+                    task_id = self.task_manager.create_environment_async(
+                        str(result.inserted_id), environment
+                    )
 
-                # Update environment with task ID
-                await self.db.environments.update_one(
-                    {"_id": result.inserted_id},
-                    {
-                        "$set": {
-                            "creation_task_id": task_id,
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
-                )
+                    # Update environment with task ID
+                    await self.db.environments.update_one(
+                        {"_id": result.inserted_id},
+                        {
+                            "$set": {
+                                "creation_task_id": task_id,
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        },
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to start async environment creation task",
+                        environment_id=str(result.inserted_id),
+                        error=str(e),
+                    )
+                    # Update environment status to indicate task manager failure
+                    await self.db.environments.update_one(
+                        {"_id": result.inserted_id},
+                        {
+                            "$set": {
+                                "status": EnvironmentStatus.FAILED.value,
+                                "error_message": f"Task manager error: {str(e)}",
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        },
+                    )
 
                 logger.info(
                     f"Started async environment creation: {env_data.name} (task: {task_id}) for user {user.username}"

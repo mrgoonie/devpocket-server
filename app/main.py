@@ -145,15 +145,37 @@ app.include_router(
 # Global exception handlers
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Clean up errors to make them JSON serializable
+    def clean_error(error):
+        """Clean error dict to make it JSON serializable."""
+        cleaned = error.copy()
+        if "ctx" in cleaned and cleaned["ctx"]:
+            # Convert any non-serializable objects in context to strings
+            cleaned_ctx = {}
+            for key, value in cleaned["ctx"].items():
+                try:
+                    # Test if value is JSON serializable
+                    import json
+
+                    json.dumps(value)
+                    cleaned_ctx[key] = value
+                except (TypeError, ValueError):
+                    # Convert to string if not serializable
+                    cleaned_ctx[key] = str(value)
+            cleaned["ctx"] = cleaned_ctx
+        return cleaned
+
+    cleaned_errors = [clean_error(error) for error in exc.errors()]
+
     logger.warning(
         "Validation error",
         path=request.url.path,
         method=request.method,
-        errors=exc.errors(),
+        errors=cleaned_errors,
     )
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": "Validation error", "errors": exc.errors()},
+        content={"detail": "Validation error", "errors": cleaned_errors},
     )
 
 

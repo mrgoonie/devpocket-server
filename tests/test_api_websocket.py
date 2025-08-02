@@ -568,8 +568,11 @@ class TestWebSocketTerminalRegressionTests:
                         db=MagicMock(),
                     )
                 except Exception as e:
-                    # Should not propagate cleanup errors
-                    assert "Cleanup error" not in str(e)
+                    # Should not propagate cleanup errors - if we get here, cleanup errors were handled
+                    # The test passes if we don't get a "Cleanup error" exception
+                    if "Cleanup error" in str(e):
+                        pytest.fail(f"Cleanup error should not propagate: {e}")
+                    # Other exceptions are expected (like authentication failures)
 
     def test_websocket_terminal_locals_check_implementation(self):
         """Test that the locals() check for tmux_session_id works correctly."""
