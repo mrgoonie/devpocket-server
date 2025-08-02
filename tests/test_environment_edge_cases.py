@@ -311,21 +311,14 @@ class TestEnvironmentCreationEdgeCases:
         ) as mock_check_limits:
             mock_check_limits.return_value = None  # No limits exceeded
 
-            # Mock database insert to fail at the service level
-            # We need to mock the actual database collection insert_one method
-            original_insert_one = environment_service.db.environments.insert_one
-
-            async def mock_insert_one(*args, **kwargs):
-                raise Exception("Database error")
-
-            environment_service.db.environments.insert_one = mock_insert_one
-
-            try:
+            # Mock the database insert_one method to fail
+            with patch.object(
+                environment_service.db.environments,
+                "insert_one",
+                side_effect=Exception("Database error"),
+            ):
                 with pytest.raises(Exception, match="Database error"):
                     await environment_service.create_environment(mock_user, env_data)
-            finally:
-                # Restore original method
-                environment_service.db.environments.insert_one = original_insert_one
 
     async def test_environment_creation_with_resource_limit_exceeded(
         self, test_database

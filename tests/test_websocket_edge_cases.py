@@ -124,7 +124,11 @@ class TestWebSocketTerminalErrorPaths:
 
         with patch("app.api.websocket.environment_service") as mock_env_service:
             mock_env_service.set_database = MagicMock()
-            mock_env_service.get_environment.return_value = mock_environment
+
+            async def mock_get_environment(*args, **kwargs):
+                return mock_environment
+
+            mock_env_service.get_environment = mock_get_environment
             mock_env_service.create_websocket_session = AsyncMock()
             mock_env_service.cleanup_websocket_session = AsyncMock()
 
@@ -194,7 +198,11 @@ class TestWebSocketTerminalErrorPaths:
 
         with patch("app.api.websocket.environment_service") as mock_env_service:
             mock_env_service.set_database = MagicMock()
-            mock_env_service.get_environment.return_value = mock_environment
+
+            async def mock_get_environment(*args, **kwargs):
+                return mock_environment
+
+            mock_env_service.get_environment = mock_get_environment
             mock_env_service.create_websocket_session = AsyncMock()
             mock_env_service.cleanup_websocket_session = AsyncMock()
 
@@ -249,7 +257,7 @@ class TestWebSocketTerminalErrorPaths:
 
         # Mock environment in running state
         mock_environment = MagicMock()
-        mock_environment.status = EnvironmentStatus.RUNNING
+        mock_environment.status = "running"
         mock_environment.name = "running-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
         mock_environment.installation_completed = True
@@ -257,7 +265,11 @@ class TestWebSocketTerminalErrorPaths:
 
         with patch("app.api.websocket.environment_service") as mock_env_service:
             mock_env_service.set_database = MagicMock()
-            mock_env_service.get_environment.return_value = mock_environment
+
+            async def mock_get_environment(*args, **kwargs):
+                return mock_environment
+
+            mock_env_service.get_environment = mock_get_environment
             mock_env_service.create_websocket_session = AsyncMock()
             mock_env_service.cleanup_websocket_session = AsyncMock()
 

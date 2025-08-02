@@ -279,19 +279,13 @@ class TestTemplateServiceEdgeCases:
         )
 
         # Mock database insert to fail at the service level
-        original_insert_one = template_service.db.templates.insert_one
-
-        async def mock_insert_one(*args, **kwargs):
-            raise Exception("Database error")
-
-        template_service.db.templates.insert_one = mock_insert_one
-
-        try:
+        with patch.object(
+            template_service.db.templates,
+            "insert_one",
+            side_effect=Exception("Database error"),
+        ):
             with pytest.raises(Exception, match="Database error"):
                 await template_service.create_template(template_data)
-        finally:
-            # Restore original method
-            template_service.db.templates.insert_one = original_insert_one
 
     async def test_template_update_empty_data(self, test_database):
         """Test template update with empty update data."""
