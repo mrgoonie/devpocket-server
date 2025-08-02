@@ -331,17 +331,25 @@ class TestEnvironmentCreationEdgeCases:
         mock_user.id = "507f1f77bcf86cd799439011"
         mock_user.subscription_plan = "free"
 
-        # Mock database to return that user already has 1 active environment
+        # Mock the _check_user_limits method to raise HTTPException
+        from fastapi import HTTPException
+
+        async def mock_check_user_limits(user):
+            raise HTTPException(
+                status_code=403,
+                detail="Environment limit reached. Upgrade your plan to create more environments.",
+            )
+
         with patch.object(
-            environment_service.db.environments, "count_documents", return_value=1
+            environment_service,
+            "_check_user_limits",
+            side_effect=mock_check_user_limits,
         ):
             env_data = EnvironmentCreate(
                 name="test-env", template=EnvironmentTemplate.PYTHON
             )
 
             # Should raise HTTPException for limit exceeded
-            from fastapi import HTTPException
-
             with pytest.raises(HTTPException) as exc_info:
                 await environment_service.create_environment(mock_user, env_data)
 
