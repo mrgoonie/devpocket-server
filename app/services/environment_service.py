@@ -127,7 +127,7 @@ class EnvironmentService:
                     if hasattr(resources, "model_dump")
                     else resources.dict()
                 ),
-                "environment_variables": env_data.environment_variables or {},
+                "environment_variables": await self._merge_template_variables(env_data),
                 "namespace": namespace,
                 "pod_name": pod_name,
                 "service_name": service_name,
@@ -1138,6 +1138,113 @@ set -g set-titles-string '#T'
             sanitized = sanitized[:500] + "... [truncated]"
         return sanitized
 
+    def _safe_get_env_vars(self, environment: EnvironmentInDB) -> list:
+        """Safely extract environment variables with defensive type checking."""
+        from kubernetes import client
+
+        try:
+            env_vars = getattr(environment, "environment_variables", {})
+
+            if isinstance(env_vars, str):
+                try:
+                    import json
+
+                    env_vars = json.loads(env_vars)
+                    logger.warning(
+                        f"Environment {environment.id} had string env_vars, converted to dict"
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    logger.error(
+                        f"Failed to parse env_vars string for environment {environment.id}"
+                    )
+                    env_vars = {}
+            elif not isinstance(env_vars, dict):
+                logger.warning(
+                    f"Environment {environment.id} env_vars type: {type(env_vars)}, defaulting to empty dict"
+                )
+                env_vars = {}
+
+            # Create V1EnvVar objects plus default environment variables
+            env_list = [client.V1EnvVar(name=k, value=v) for k, v in env_vars.items()]
+
+            # Add default environment variables
+            env_list.extend(
+                [
+                    client.V1EnvVar(
+                        name="USER_ID",
+                        value=environment.user_id,
+                    ),
+                    client.V1EnvVar(
+                        name="ENVIRONMENT_NAME",
+                        value=environment.name,
+                    ),
+                ]
+            )
+
+            return env_list
+
+        except Exception as e:
+            logger.error(
+                f"Error processing environment variables for {environment.id}: {e}"
+            )
+            # Return minimal default environment variables
+            return [
+                client.V1EnvVar(
+                    name="USER_ID",
+                    value=environment.user_id,
+                ),
+                client.V1EnvVar(
+                    name="ENVIRONMENT_NAME",
+                    value=environment.name,
+                ),
+            ]
+
+    async def _merge_template_variables(self, env_data: EnvironmentCreate) -> dict:
+        """Merge template environment variables with user-provided variables."""
+        template_vars = {}
+
+        # Fetch template environment variables if template is specified
+        if env_data.template:
+            try:
+                from app.services.template_service import template_service
+
+                template_service.set_database(self.db)
+                # Handle both string and enum template values
+                template_name = (
+                    env_data.template.value
+                    if hasattr(env_data.template, "value")
+                    else env_data.template
+                )
+                template_data = await template_service.get_template_by_name(
+                    template_name
+                )
+
+                if template_data and template_data.environment_variables:
+                    template_vars = template_data.environment_variables
+                    logger.info(
+                        f"Inherited {len(template_vars)} environment variables from template {template_name}"
+                    )
+                else:
+                    logger.info(
+                        f"No environment variables found in template {template_name}"
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch template variables for {env_data.template}: {e}"
+                )
+                template_vars = {}
+
+        # Merge template vars with user vars (user overrides template)
+        user_vars = env_data.environment_variables or {}
+        merged_env_vars = {**template_vars, **user_vars}
+
+        logger.info(
+            f"Merged environment variables: {len(template_vars)} from template + {len(user_vars)} from user = {len(merged_env_vars)} total"
+        )
+
+        return merged_env_vars
+
     async def _create_container(self, environment: EnvironmentInDB):
         """Create the actual container/pod in Kubernetes"""
         # Skip actual container creation in test mode (check dynamically for integration tests)
@@ -1471,20 +1578,7 @@ set -g set-titles-string '#T'
                                                 ),
                                             },
                                         ),
-                                        env=[
-                                            client.V1EnvVar(name=k, value=v)
-                                            for k, v in environment.environment_variables.items()
-                                        ]
-                                        + [
-                                            client.V1EnvVar(
-                                                name="USER_ID",
-                                                value=environment.user_id,
-                                            ),
-                                            client.V1EnvVar(
-                                                name="ENVIRONMENT_NAME",
-                                                value=environment.name,
-                                            ),
-                                        ],
+                                        env=self._safe_get_env_vars(environment),
                                         volume_mounts=[
                                             client.V1VolumeMount(
                                                 name="home-dir", mount_path="/home"
@@ -2987,18 +3081,7 @@ class AsyncEnvironmentTaskManager:
                                         ),
                                     },
                                 ),
-                                env=[
-                                    client.V1EnvVar(name=k, value=v)
-                                    for k, v in environment.environment_variables.items()
-                                ]
-                                + [
-                                    client.V1EnvVar(
-                                        name="USER_ID", value=environment.user_id
-                                    ),
-                                    client.V1EnvVar(
-                                        name="ENVIRONMENT_NAME", value=environment.name
-                                    ),
-                                ],
+                                env=self._safe_get_env_vars(environment),
                                 volume_mounts=[
                                     client.V1VolumeMount(
                                         name="home-dir", mount_path="/home"
