@@ -100,6 +100,16 @@ class EnvironmentService:
 
             # Set default resources based on subscription
             resources = env_data.resources or self._get_default_resources(user)
+            # Ensure resources is a ResourceLimits object
+            if not hasattr(resources, "dict") and not hasattr(resources, "model_dump"):
+                # If it's not a Pydantic model, create one from the dict
+                from app.models.environment import ResourceLimits
+
+                resources = (
+                    ResourceLimits(**resources)
+                    if isinstance(resources, dict)
+                    else resources
+                )
 
             # Generate unique names
             namespace = f"user-{str(user.id)}"
@@ -112,7 +122,11 @@ class EnvironmentService:
                 "name": env_data.name,
                 "template": env_data.template.value,
                 "status": EnvironmentStatus.CREATING.value,
-                "resources": resources.model_dump(),
+                "resources": (
+                    resources.dict()
+                    if hasattr(resources, "dict")
+                    else resources.model_dump()
+                ),
                 "environment_variables": env_data.environment_variables or {},
                 "namespace": namespace,
                 "pod_name": pod_name,
@@ -121,7 +135,6 @@ class EnvironmentService:
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
-
             # Save to database first
             result = await self.db.environments.insert_one(env_dict)
 

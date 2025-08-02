@@ -202,7 +202,9 @@ async def websocket_terminal(
 
         # Create or attach to tmux session only if environment is running
         tmux_session_id = None
-        if environment.status.value == "running":
+        if (
+            environment.status.value == "running"
+        ):  # Compare with string directly, not enum value
             # Try to find existing tmux session for this environment
             existing_sessions = await tmux_manager.list_sessions(
                 environment_id=environment_id
@@ -394,7 +396,7 @@ async def websocket_terminal(
 
     finally:
         # Cleanup tmux session attachment (but keep session alive for persistence)
-        if tmux_session_id:
+        if "tmux_session_id" in locals() and tmux_session_id:
             try:
                 # Note: We don't kill the tmux session, just detach from it
                 # This allows the session to persist for reconnection

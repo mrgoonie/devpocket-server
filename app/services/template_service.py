@@ -442,7 +442,11 @@ class TemplateService:
             )
 
         # Create template document
-        template_dict = template_data.model_dump()
+        template_dict = (
+            template_data.dict()
+            if hasattr(template_data, "dict")
+            else template_data.model_dump()
+        )
         template_dict.update(
             {
                 "status": TemplateStatus.ACTIVE,
@@ -513,7 +517,13 @@ class TemplateService:
             return None
 
         update_dict = {
-            k: v for k, v in update_data.model_dump().items() if v is not None
+            k: v
+            for k, v in (
+                update_data.dict()
+                if hasattr(update_data, "dict")
+                else update_data.model_dump()
+            ).items()
+            if v is not None
         }
 
         if not update_dict:
