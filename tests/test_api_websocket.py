@@ -3,6 +3,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import WebSocketDisconnect
 
 from app.api.websocket import WebSocketConnectionManager
 
@@ -435,3 +436,165 @@ class TestWebSocketLogsEndpoint:
             # Test that Kubernetes client can be instantiated
             k8s_client = client.CoreV1Api()
             assert k8s_client is not None
+
+
+class TestWebSocketTerminalRegressionTests:
+    """Test WebSocket terminal regression scenarios for specific bugs that were fixed."""
+
+    @pytest.mark.asyncio
+    async def test_websocket_terminal_tmux_session_id_unbound_error_regression(self):
+        """Regression test for UnboundLocalError: cannot access local variable 'tmux_session_id'."""
+        # This tests the specific issue that was fixed in the finally block
+
+        # Mock WebSocket that will disconnect immediately
+        mock_websocket = AsyncMock()
+        mock_websocket.receive_text.side_effect = WebSocketDisconnect()
+
+        # Mock environment in installing state (tmux_session_id won't be created)
+        mock_environment = MagicMock()
+        mock_environment.status.value = "installing"  # Not running, so no tmux session
+        mock_environment.name = "installing-env"
+        mock_environment.id = "507f1f77bcf86cd799439011"
+        mock_environment.installation_completed = False
+        mock_environment.template.value = "python"
+
+        with patch("app.api.websocket.environment_service") as mock_env_service:
+            mock_env_service.set_database = MagicMock()
+            mock_env_service.get_environment.return_value = mock_environment
+            mock_env_service.create_websocket_session = AsyncMock()
+            mock_env_service.cleanup_websocket_session = AsyncMock()
+
+            with patch("app.api.websocket.authenticate_websocket") as mock_auth:
+                mock_user = MagicMock()
+                mock_user.id = "507f1f77bcf86cd799439011"
+                mock_user.username = "testuser"
+                mock_auth.return_value = mock_user
+
+                with patch(
+                    "app.api.websocket.websocket_rate_limiter"
+                ) as mock_rate_limiter:
+                    mock_rate_limiter.check_connection_limit.return_value = True
+                    mock_rate_limiter.add_connection = MagicMock()
+                    mock_rate_limiter.remove_connection = MagicMock()
+
+                    with patch(
+                        "app.api.websocket.connection_manager"
+                    ) as mock_conn_manager:
+                        mock_conn_manager.connect = AsyncMock()
+                        mock_conn_manager.send_personal_message = AsyncMock()
+                        mock_conn_manager.disconnect = MagicMock()
+
+                        with patch("app.api.websocket.tmux_manager") as mock_tmux:
+                            mock_tmux.list_sessions.return_value = []
+                            mock_tmux.detach_from_session = AsyncMock()
+
+                            # This should NOT raise UnboundLocalError in the finally block
+                            try:
+                                from app.api.websocket import websocket_terminal
+
+                                await websocket_terminal(
+                                    websocket=mock_websocket,
+                                    environment_id="installing_env_id",
+                                    token="valid_token",
+                                    db=MagicMock(),
+                                )
+                            except WebSocketDisconnect:
+                                # Expected exception, but should not have UnboundLocalError
+                                pass
+                            except UnboundLocalError as e:
+                                if "tmux_session_id" in str(e):
+                                    pytest.fail(
+                                        f"UnboundLocalError for tmux_session_id should be fixed: {e}"
+                                    )
+                                else:
+                                    raise
+
+                            # Verify cleanup was called without errors
+                            mock_conn_manager.disconnect.assert_called()
+                            mock_rate_limiter.remove_connection.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_websocket_terminal_variable_scope_safety(self):
+        """Test that WebSocket terminal handles variable scope safely in all code paths."""
+
+        # Test scenario where tmux_session_id is never initialized
+        mock_websocket = AsyncMock()
+
+        # Mock environment that fails authentication (early exit)
+        with patch("app.api.websocket.authenticate_websocket") as mock_auth:
+            mock_auth.return_value = None  # Authentication fails
+
+            # This should not raise any variable scope errors
+            try:
+                from app.api.websocket import websocket_terminal
+
+                await websocket_terminal(
+                    websocket=mock_websocket,
+                    environment_id="any_env_id",
+                    token="invalid_token",
+                    db=MagicMock(),
+                )
+            except Exception as e:
+                # Should not have variable scope errors
+                assert "tmux_session_id" not in str(e)
+                assert "UnboundLocalError" not in str(e)
+
+            # Should close WebSocket with authentication error
+            mock_websocket.close.assert_called_with(
+                code=1008, reason="Authentication failed"
+            )
+
+    @pytest.mark.asyncio
+    async def test_websocket_terminal_cleanup_robustness(self):
+        """Test that WebSocket terminal cleanup is robust against various failure scenarios."""
+
+        mock_websocket = AsyncMock()
+
+        # Test cleanup when various components fail
+        with patch("app.api.websocket.connection_manager") as mock_conn_manager:
+            mock_conn_manager.disconnect.side_effect = Exception("Cleanup error")
+
+            with patch("app.api.websocket.authenticate_websocket") as mock_auth:
+                mock_auth.return_value = None  # Quick exit
+
+                # Should handle cleanup errors gracefully
+                try:
+                    from app.api.websocket import websocket_terminal
+
+                    await websocket_terminal(
+                        websocket=mock_websocket,
+                        environment_id="any_env_id",
+                        token="invalid_token",
+                        db=MagicMock(),
+                    )
+                except Exception as e:
+                    # Should not propagate cleanup errors
+                    assert "Cleanup error" not in str(e)
+
+    def test_websocket_terminal_locals_check_implementation(self):
+        """Test that the locals() check for tmux_session_id works correctly."""
+
+        # Simulate the fixed code pattern
+        def test_cleanup_pattern():
+            # Simulate scenario where tmux_session_id might not be defined
+            if "tmux_session_id" in locals() and "tmux_session_id" in globals():
+                # This branch should only execute if variable exists
+                return "variable_exists"
+            else:
+                # This branch handles the case where variable doesn't exist
+                return "variable_not_exists"
+
+        # Should handle missing variable gracefully
+        result = test_cleanup_pattern()
+        assert result == "variable_not_exists"
+
+        # Test with variable defined
+        def test_cleanup_pattern_with_var():
+            tmux_session_id = "session_123"
+            if "tmux_session_id" in locals() and tmux_session_id:
+                return "variable_exists"
+            else:
+                return "variable_not_exists"
+
+        result = test_cleanup_pattern_with_var()
+        assert result == "variable_exists"

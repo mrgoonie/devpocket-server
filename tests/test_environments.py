@@ -735,3 +735,70 @@ class TestEnvironmentEndpoints:
         data = response.json()
         assert data["status"] == "stopped"
         assert data["name"] == "updated-and-stopped-env"
+
+    async def test_environment_creation_resource_serialization_edge_case(
+        self, client: AsyncClient, authenticated_user
+    ):
+        """Test environment creation with edge case resource serialization (regression test)."""
+        # This tests the specific issue that was fixed: 'str' object does not support item assignment
+        environment_data = {
+            "name": "serialization-test-env",
+            "template": "python",
+            "resources": {"cpu": "500m", "memory": "1Gi", "storage": "10Gi"},
+        }
+
+        response = await client.post(
+            "/api/v1/environments",
+            json=environment_data,
+            headers=authenticated_user["headers"],
+        )
+
+        # Should not fail with serialization error
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "serialization-test-env"
+        assert data["template"] == "python"
+        assert data["status"] == "creating"
+
+    async def test_environment_creation_with_none_resources(
+        self, client: AsyncClient, authenticated_user
+    ):
+        """Test environment creation with None resources (should use defaults)."""
+        environment_data = {
+            "name": "default-resources-env",
+            "template": "python",
+            "resources": None,  # Should use default resources
+        }
+
+        response = await client.post(
+            "/api/v1/environments",
+            json=environment_data,
+            headers=authenticated_user["headers"],
+        )
+
+        # Should not fail and should use default resources
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "default-resources-env"
+        assert "resources" in data
+
+    async def test_environment_creation_without_resources_field(
+        self, client: AsyncClient, authenticated_user
+    ):
+        """Test environment creation without resources field (should use defaults)."""
+        environment_data = {
+            "name": "no-resources-field-env",
+            "template": "python"
+            # No resources field at all
+        }
+
+        response = await client.post(
+            "/api/v1/environments",
+            json=environment_data,
+            headers=authenticated_user["headers"],
+        )
+
+        # Should not fail and should use default resources
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "no-resources-field-env"
