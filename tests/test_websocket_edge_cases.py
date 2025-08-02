@@ -194,6 +194,7 @@ class TestWebSocketTerminalErrorPaths:
         mock_environment.name = "running-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
         mock_environment.installation_completed = True
+        mock_environment.template = MagicMock()
         mock_environment.template.value = "python"
 
         with patch("app.api.websocket.environment_service") as mock_env_service:
@@ -261,6 +262,7 @@ class TestWebSocketTerminalErrorPaths:
         mock_environment.name = "running-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
         mock_environment.installation_completed = True
+        mock_environment.template = MagicMock()
         mock_environment.template.value = "python"
 
         with patch("app.api.websocket.environment_service") as mock_env_service:
