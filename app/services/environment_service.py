@@ -123,9 +123,9 @@ class EnvironmentService:
                 "template": env_data.template.value,
                 "status": EnvironmentStatus.CREATING.value,
                 "resources": (
-                    resources.dict()
-                    if hasattr(resources, "dict")
-                    else resources.model_dump()
+                    resources.model_dump()
+                    if hasattr(resources, "model_dump")
+                    else resources.dict()
                 ),
                 "environment_variables": env_data.environment_variables or {},
                 "namespace": namespace,
@@ -1184,9 +1184,13 @@ set -g set-titles-string '#T'
 
             # Get template-specific startup commands and create tmux-enabled script
             template_service.set_database(self.db)
-            template_data = await template_service.get_template_by_name(
+            # Handle both string and enum template values
+            template_name = (
                 environment.template.value
+                if hasattr(environment.template, "value")
+                else environment.template
             )
+            template_data = await template_service.get_template_by_name(template_name)
 
             if template_data and template_data.startup_commands:
                 startup_script = self._create_tmux_startup_script(
@@ -1412,7 +1416,7 @@ set -g set-titles-string '#T'
                             "app": "devpocket",
                             "environment": environment.pod_name,
                             "user-id": environment.user_id,
-                            "template": environment.template.value,
+                            "template": template_name,
                         },
                     ),
                     spec=client.V1DeploymentSpec(
@@ -1436,7 +1440,9 @@ set -g set-titles-string '#T'
                                     client.V1Container(
                                         name="devpocket-env",
                                         image=self._get_template_image(
-                                            environment.template
+                                            EnvironmentTemplate(template_name)
+                                            if isinstance(template_name, str)
+                                            else environment.template
                                         ),
                                         command=["/bin/bash"],
                                         args=[
@@ -2908,8 +2914,19 @@ class AsyncEnvironmentTaskManager:
         from kubernetes import client
 
         # Get startup command
+        # Handle both string and enum template values
+        template_value = (
+            environment.template.value
+            if hasattr(environment.template, "value")
+            else environment.template
+        )
+        template_enum = (
+            EnvironmentTemplate(template_value)
+            if isinstance(template_value, str)
+            else environment.template
+        )
         startup_command = await self.environment_service._get_template_startup_command(
-            environment.template
+            template_enum
         )
 
         deployment_manifest = client.V1Deployment(
@@ -2920,7 +2937,7 @@ class AsyncEnvironmentTaskManager:
                     "app": "devpocket",
                     "environment": environment.pod_name,
                     "user-id": environment.user_id,
-                    "template": environment.template.value,
+                    "template": template_value,
                 },
             ),
             spec=client.V1DeploymentSpec(
@@ -2944,7 +2961,7 @@ class AsyncEnvironmentTaskManager:
                             client.V1Container(
                                 name="devpocket-env",
                                 image=self.environment_service._get_template_image(
-                                    environment.template
+                                    template_enum
                                 ),
                                 command=["/bin/bash"],
                                 args=["-c", startup_command],

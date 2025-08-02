@@ -190,7 +190,9 @@ async def websocket_terminal(
             "environment": {
                 "id": str(environment.id),
                 "name": environment.name,
-                "template": environment.template.value,
+                "template": environment.template.value
+                if hasattr(environment.template, "value")
+                else environment.template,
                 "status": environment.status.value,
                 "installation_completed": environment.installation_completed,
                 "pty_enabled": environment.status.value == "running",

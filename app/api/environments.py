@@ -83,7 +83,9 @@ async def create_environment(
             details={
                 "environment_id": str(environment.id),
                 "name": environment.name,
-                "template": environment.template.value,
+                "template": environment.template.value
+                if hasattr(environment.template, "value")
+                else environment.template,
             },
         )
 
