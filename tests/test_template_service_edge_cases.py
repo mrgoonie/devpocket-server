@@ -279,13 +279,19 @@ class TestTemplateServiceEdgeCases:
         )
 
         # Mock database insert to fail at the service level
-        with patch.object(
-            template_service.db.templates,
-            "insert_one",
-            side_effect=Exception("Database error"),
-        ):
+        original_insert_one = template_service.db.templates.insert_one
+
+        async def mock_insert_one(*args, **kwargs):
+            raise Exception("Database error")
+
+        template_service.db.templates.insert_one = mock_insert_one
+
+        try:
             with pytest.raises(Exception, match="Database error"):
                 await template_service.create_template(template_data)
+        finally:
+            # Restore original method
+            template_service.db.templates.insert_one = original_insert_one
 
     async def test_template_update_empty_data(self, test_database):
         """Test template update with empty update data."""
@@ -448,8 +454,10 @@ class TestTemplateValidationEdgeCases:
                 template_data
             )
             assert isinstance(validation_result, dict)
-            # Should have warnings about network errors
-            assert len(validation_result["warnings"]) > 0
+            # Should have errors about network errors (not warnings)
+            assert len(validation_result["errors"]) > 0
+            # Should be marked as invalid due to network errors
+            assert validation_result["valid"] is False
 
     async def test_template_increment_usage_count_invalid_id(self, test_database):
         """Test incrementing usage count with invalid template ID."""

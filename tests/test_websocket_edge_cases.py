@@ -29,7 +29,12 @@ class TestWebSocketTerminalErrorPaths:
         # Mock database to return None for environment
         with patch("app.api.websocket.environment_service") as mock_env_service:
             mock_env_service.set_database = MagicMock()
-            mock_env_service.get_environment.return_value = None
+
+            # Mock async method to return None (environment not found)
+            async def mock_get_environment(*args, **kwargs):
+                return None
+
+            mock_env_service.get_environment = mock_get_environment
 
             # Mock authentication to succeed
             with patch("app.api.websocket.authenticate_websocket") as mock_auth:
@@ -47,12 +52,12 @@ class TestWebSocketTerminalErrorPaths:
                     # Call websocket_terminal function
                     await websocket_terminal(
                         websocket=mock_websocket,
-                        environment_id="nonexistent_env_id",
+                        environment_id="failed_env_id",
                         token="valid_token",
                         db=test_database.database,
                     )
 
-                    # Should close WebSocket with appropriate error
+                    # Should close WebSocket because environment is not found
                     mock_websocket.close.assert_called_with(
                         code=1008, reason="Environment not found"
                     )
@@ -64,13 +69,18 @@ class TestWebSocketTerminalErrorPaths:
 
         # Mock environment in failed state
         mock_environment = MagicMock()
-        mock_environment.status = EnvironmentStatus.FAILED
+        mock_environment.status = "failed"  # Not running or installing
         mock_environment.name = "failed-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
 
         with patch("app.api.websocket.environment_service") as mock_env_service:
             mock_env_service.set_database = MagicMock()
-            mock_env_service.get_environment.return_value = mock_environment
+
+            # Mock async method to return failed environment
+            async def mock_get_environment(*args, **kwargs):
+                return mock_environment
+
+            mock_env_service.get_environment = mock_get_environment
 
             # Mock authentication to succeed
             with patch("app.api.websocket.authenticate_websocket") as mock_auth:
@@ -176,7 +186,7 @@ class TestWebSocketTerminalErrorPaths:
 
         # Mock environment in running state
         mock_environment = MagicMock()
-        mock_environment.status = EnvironmentStatus.RUNNING
+        mock_environment.status = "running"  # Use string value
         mock_environment.name = "running-env"
         mock_environment.id = "507f1f77bcf86cd799439011"
         mock_environment.installation_completed = True

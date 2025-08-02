@@ -181,6 +181,10 @@ class EnvironmentService:
                             }
                         },
                     )
+                    # Update the environment object to reflect the failed status
+                    environment.status = EnvironmentStatus.FAILED
+                    environment.error_message = f"Task manager error: {str(e)}"
+                    environment.updated_at = datetime.now(timezone.utc)
             else:
                 # Fallback to synchronous creation (for testing or when task manager is not available)
                 logger.warning(
